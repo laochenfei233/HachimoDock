@@ -541,16 +541,21 @@ fn run_event_stream(usb: UsbSerialManager, cap: Capability) -> Result<(), String
 
 /// Background relay for the DSH plugin. It reconnects forever; USB absence is
 /// reported and the plugin keeps its normal browser approval path.
-pub fn start(usb: UsbSerialManager) {
+pub fn start(usb: UsbSerialManager, bridge: dsh_auth::Bridge) {
+    let label = match bridge {
+        dsh_auth::Bridge::Dsh => "dsh-approval",
+        dsh_auth::Bridge::Prism => "prism-approval",
+    };
     thread::spawn(move || loop {
         // Do not attach the /events subscriber while no P4 is connected: the
-        // DSH plugin treats an attached bridge as the terminal answerer, so a
-        // resident app without a device must leave the normal DSH UI in charge.
+        // bridge plugin treats an attached relay as the terminal answerer, so
+        // a resident app without a device must leave the normal approval UI
+        // in charge.
         if !usb.status().connected {
             thread::sleep(Duration::from_secs(2));
             continue;
         }
-        let cap = match dsh_auth::load("relay") {
+        let cap = match dsh_auth::load_bridge(bridge, "relay") {
             Ok(c) => c,
             Err(_) => {
                 thread::sleep(Duration::from_secs(3));
@@ -558,7 +563,7 @@ pub fn start(usb: UsbSerialManager) {
             }
         };
         if let Err(error) = run_event_stream(usb.clone(), cap) {
-            eprintln!("[dsh-approval] {error}; retrying in 3s");
+            eprintln!("[{label}] {error}; retrying in 3s");
         }
         thread::sleep(Duration::from_secs(3));
     });

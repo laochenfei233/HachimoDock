@@ -10,6 +10,7 @@ const { OpenClawAdapter } = require("./adapters/openclaw");
 const { MiMoCodeAdapter } = require("./adapters/mimocode");
 const { WorkBuddyAdapter } = require("./adapters/workbuddy");
 const { DshAdapter } = require("./adapters/dsh");
+const { PrismAdapter } = require("./adapters/prism");
 const { defaultLog } = require("./log");
 const { readPort } = require("./env");
 
@@ -58,4 +59,5 @@ module.exports = {
   MiMoCodeAdapter,
   WorkBuddyAdapter,
   DshAdapter,
+  PrismAdapter,
 };

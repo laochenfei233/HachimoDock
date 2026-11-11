@@ -1512,6 +1512,26 @@ fn interrupt_dsh_session(session_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Switch the conversation the device picked on the prism channel. The prism
+/// bridge validates the live session and pushes the id to the prism web
+/// client, which changes the selected conversation without stealing focus.
+fn activate_prism_session(session_id: &str) -> Result<(), String> {
+    if session_id.is_empty() || session_id == "auto" || session_id.len() > 200 {
+        return Err("Prism 需要明确的会话".into());
+    }
+    let cap = dsh_auth::load_bridge(dsh_auth::Bridge::Prism, "bus")?;
+    let receipt = dsh_auth::post(&cap, "/sessions/activate", &serde_json::json!({ "sessionId": session_id }))?;
+    if receipt["sessionId"] != session_id { return Err("Prism 切换回执不匹配".into()); }
+    Ok(())
+}
+
+#[tauri::command]
+fn prism_activate_session(session_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || activate_prism_session(&session_id))
+        .await
+        .map_err(|_| "Prism 会话切换未完成".to_string())?
+}
+
 fn submit_device_voice_via_agent_bus(context: Arc<DeviceVoiceContext>, text: String) {
     if !device_voice_target_is_current(&context) {
         cancel_device_voice_context(&context, "voice target changed before final submission");
@@ -7083,6 +7103,10 @@ const DSH_APP_BUNDLE_NAME: &str = "DeepSeek Harness.app";
 #[cfg(target_os = "macos")]
 const DSH_BUNDLE_IDENTIFIER: &str = "com.deepseek.dsh";
 const DSH_BUNDLED_CLI_RELATIVE_PATH: &str = "Contents/Resources/runtime/cli/bin/dsh";
+const PRISM_APP_BUNDLE_NAME: &str = "Prism Agent.app";
+#[cfg(target_os = "macos")]
+const PRISM_BUNDLE_IDENTIFIER: &str = "ai.prism.agent.desktop";
+const PRISM_BUNDLED_CLI_RELATIVE_PATH: &str = "Contents/Resources/runtime/prism";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DshDetection {
@@ -7107,13 +7131,25 @@ fn classify_dsh_detection(
     profile_path: Option<&Path>,
     version: Option<&str>,
 ) -> DshDetection {
+    classify_agent_detection("DeepSeek Harness", app_path, cli_path, profile_path, version)
+}
+
+/// Shared classifier behind the DeepSeek Harness and Prism detections; the
+/// label only names the install in the user-facing detail string.
+fn classify_agent_detection(
+    label: &str,
+    app_path: Option<&Path>,
+    cli_path: Option<&Path>,
+    profile_path: Option<&Path>,
+    version: Option<&str>,
+) -> DshDetection {
     let detected = app_path.is_some() || cli_path.is_some() || profile_path.is_some();
     if !detected {
         return DshDetection {
             detected: false,
             ready: false,
             status: "not_found".to_string(),
-            detail: "未检测到 DeepSeek Harness 应用、CLI 或桌面配置".to_string(),
+            detail: format!("未检测到 {label} 应用、CLI 或桌面配置"),
         };
     }
 
@@ -7138,10 +7174,21 @@ fn classify_dsh_detection(
         ready: true,
         status: "ready".to_string(),
         detail: format!(
-            "已检测到 DeepSeek Harness{version}（{}）",
+            "已检测到 {label}{version}（{}）",
             sources.join("；")
         ),
     }
+}
+
+/// Classify an already-probed Prism install (the DeepSeek Harness fork with
+/// its own `~/.prism` identity).
+fn classify_prism_detection(
+    app_path: Option<&Path>,
+    cli_path: Option<&Path>,
+    profile_path: Option<&Path>,
+    version: Option<&str>,
+) -> DshDetection {
+    classify_agent_detection("Prism", app_path, cli_path, profile_path, version)
 }
 
 /// Cheap version lookup: read CFBundleShortVersionString out of the bundle's
@@ -7268,6 +7315,115 @@ fn detect_dsh_with_home(home: Option<&Path>) -> DetectedAgent {
     }
 }
 
+fn detect_prism() -> DetectedAgent {
+    detect_prism_with_home(get_home_dir().ok().as_deref())
+}
+
+fn detect_prism_with_home(home: Option<&Path>) -> DetectedAgent {
+    let app_path = find_prism_app_bundle(home);
+    let cli_path = find_prism_cli(home, app_path.as_deref());
+    let profile_path = find_prism_profile_dir(home);
+    let version = read_dsh_bundle_version(app_path.as_deref());
+    let detection = classify_prism_detection(
+        app_path.as_deref(),
+        cli_path.as_deref(),
+        profile_path.as_deref(),
+        version.as_deref(),
+    );
+
+    DetectedAgent {
+        id: "prism-agent".to_string(),
+        label: "Prism".to_string(),
+        detected: detection.detected,
+        ready: detection.ready,
+        status: detection.status,
+        detail: detection.detail,
+        command_path: cli_path
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        config_path: profile_path
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        activity_path: app_path
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        can_sync_hook: false,
+    }
+}
+
+fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
+    #[cfg(not(target_os = "macos"))]
+    let _ = home;
+
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in macos_app_bundle_candidates(
+            home,
+            &[PRISM_APP_BUNDLE_NAME],
+            &[PRISM_BUNDLE_IDENTIFIER],
+        ) {
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let mut candidates = Vec::new();
+        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            push_unique_path(
+                &mut candidates,
+                PathBuf::from(local_app_data)
+                    .join("Programs")
+                    .join("Prism Agent")
+                    .join("Prism Agent.exe"),
+            );
+        }
+        if let Some(program_files) = env::var_os("ProgramFiles") {
+            push_unique_path(
+                &mut candidates,
+                PathBuf::from(program_files)
+                    .join("Prism Agent")
+                    .join("Prism Agent.exe"),
+            );
+        }
+        for candidate in candidates {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn find_prism_cli(home: Option<&Path>, app_path: Option<&Path>) -> Option<PathBuf> {
+    if let Some(app_path) = app_path {
+        let bundled = PRISM_BUNDLED_CLI_RELATIVE_PATH
+            .split('/')
+            .fold(app_path.to_path_buf(), |path, segment| path.join(segment));
+        if bundled.is_file() {
+            return Some(bundled);
+        }
+    }
+    find_agent_executable(
+        "prism",
+        home,
+        &[".prism/bin/prism", ".local/bin/prism"],
+        "prism.exe",
+    )
+    .map(PathBuf::from)
+}
+
+fn find_prism_profile_dir(home: Option<&Path>) -> Option<PathBuf> {
+    let profile = home?.join(".prism").join("profiles").join("web");
+    profile.is_dir().then_some(profile)
+}
+
 fn detect_local_agents_inner() -> Result<AgentDiscoveryResponse, String> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -7280,6 +7436,7 @@ fn detect_local_agents_inner() -> Result<AgentDiscoveryResponse, String> {
         detect_openclaw(),
         detect_mimocode(),
         detect_dsh(),
+        detect_prism(),
         detect_workbuddy(),
     ];
 
@@ -11467,7 +11624,8 @@ pub fn run() {
     }
     start_usb_host_heartbeat(usb_manager.clone());
     start_usb_state_forwarder(usb_manager.clone());
-    dsh_approval::start(usb_manager.clone());
+    dsh_approval::start(usb_manager.clone(), dsh_auth::Bridge::Dsh);
+    dsh_approval::start(usb_manager.clone(), dsh_auth::Bridge::Prism);
     }
 
     let usb_for_auto = usb_manager.clone();
@@ -11674,6 +11832,7 @@ pub fn run() {
             ensure_voice_runtime,
             stop_voice_runtime,
             detect_local_agents,
+            prism_activate_session,
             download_bytes,
             http_request_text,
             check_ffmpeg_available,
@@ -13997,6 +14156,49 @@ mod tests {
         assert_eq!(detected.config_path, profile.to_string_lossy().into_owned());
         assert_eq!(detected.activity_path, app.to_string_lossy().into_owned());
         assert!(detected.detail.contains("9.9.9"));
+    }
+
+    #[test]
+    fn prism_detection_classifies_present_install() {
+        let detection = classify_prism_detection(
+            Some(Path::new("Prism Agent.app")),
+            Some(Path::new("prism-cli")),
+            Some(Path::new("profile")),
+            Some("0.1.0"),
+        );
+        assert!(detection.detected);
+        assert!(detection.ready);
+        assert_eq!(detection.status, "ready");
+        assert!(detection.detail.contains("Prism"));
+        assert!(detection.detail.contains("v0.1.0"));
+        assert!(detection.detail.contains("prism-cli"));
+        assert!(detection.detail.contains("DeepSeek") == false);
+    }
+
+    #[test]
+    fn prism_detection_classifies_absent_install() {
+        let detection = classify_prism_detection(None, None, None, None);
+        assert!(!detection.detected);
+        assert!(!detection.ready);
+        assert_eq!(detection.status, "not_found");
+        assert!(detection.detail.contains("未检测到 Prism"));
+    }
+
+    #[test]
+    fn prism_detection_finds_profile_directory_in_home() {
+        let home = tempfile::tempdir().unwrap();
+        let profile = home.path().join(".prism").join("profiles").join("web");
+        fs::create_dir_all(&profile).unwrap();
+        let detected = detect_prism_with_home(Some(home.path()));
+        assert_eq!(detected.id, "prism-agent");
+        assert_eq!(detected.label, "Prism");
+        assert!(detected.detected);
+        assert!(detected.ready);
+        assert_eq!(detected.config_path, profile.to_string_lossy().into_owned());
+        assert!(detected.detail.contains("配置"));
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(detect_prism_with_home(Some(empty.path())).id, "prism-agent");
+        assert!(!detect_prism_with_home(Some(empty.path())).detected);
     }
 
     #[test]

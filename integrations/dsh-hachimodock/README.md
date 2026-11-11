@@ -123,6 +123,15 @@ bounded to 16 and terminal receipts to 256; voice pending records are bounded to
 64 with 120s lifetime and client actions to 128 per mounted lease. Native frames
 and bus responses are bounded to 64KiB. Unknown writes never trigger fallback.
 
+## Prism (prism-agent)
+
+The prism-agent fork mounts the same protocol v2 as the bundle `@prism/prism-hachimodock`
+with its own capability descriptor directory (`~/.claw-pet/prism-bridge/`); the desktop
+manager registers a `prism-agent` adapter and a second approval relay bound to that
+descriptor. Conversation switching (`POST /sessions/activate`, bus token) fans the device
+selection to prism's web client, which changes the selected conversation without stealing
+window focus.
+
 ## Focused checks
 
 Run `node --test integrations/dsh-hachimodock/test/*.test.js` and

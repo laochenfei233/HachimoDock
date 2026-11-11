@@ -301,11 +301,11 @@ export function deviceVoiceRouterReducer(state, action) {
 }
 
 export function transcriptMessage(payload, phase, composerMode) {
-  const visibleAgentLabel = normalizeText(payload?.agentId).toLowerCase() === "deepseek-harness" ? "DeepSeek Harness" : normalizeText(payload?.agentId).toLowerCase() === "workbuddy" ? "WorkBuddy" : normalizeText(payload?.agentId).toLowerCase() === "claude-code"
+  const visibleAgentLabel = normalizeText(payload?.agentId).toLowerCase() === "deepseek-harness" ? "DeepSeek Harness" : normalizeText(payload?.agentId).toLowerCase() === "prism-agent" ? "Prism" : normalizeText(payload?.agentId).toLowerCase() === "workbuddy" ? "WorkBuddy" : normalizeText(payload?.agentId).toLowerCase() === "claude-code"
     ? "Claude"
     : "ChatGPT（Codex）";
   if (phase === "listening") {
-    if (["WorkBuddy", "DeepSeek Harness"].includes(visibleAgentLabel)) {
+    if (["WorkBuddy", "DeepSeek Harness", "Prism"].includes(visibleAgentLabel)) {
       return `正在聆听；松开后将完整识别结果一次追加到 ${visibleAgentLabel} 输入框，不自动发送。`;
     }
     if (composerMode === "visible") {

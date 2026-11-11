@@ -1015,6 +1015,14 @@ export default function DeviceDashboard({ active = true, binding, onUnbind, onOp
     displayEnabled: true,
     dismissedSessions: dismissedP4Sessions,
   });
+  const activatePrismSession = useCallback((sessionId) => {
+    if (selectedAgentId !== "prism-agent" || !sessionId || sessionId === "auto") return;
+    // Switch the desktop conversation without stealing window focus; an
+    // unavailable bridge leaves the device-side selection untouched.
+    invoke("prism_activate_session", { sessionId }).catch((error) => {
+      console.warn("prism session switch failed:", error);
+    });
+  }, [selectedAgentId]);
   const p4SessionSync = useP4SessionSync({
     enabled: isP4Runtime,
     boardDeviceId: p4TargetBoardDeviceId,
@@ -1029,6 +1037,7 @@ export default function DeviceDashboard({ active = true, binding, onUnbind, onOp
     dismissedSessions: dismissedP4Sessions,
     onDismissSessions: mergeDismissedP4Sessions,
     formatSessionOption: formatVoiceSessionOption,
+    onActivatedSession: activatePrismSession,
     push,
   });
   const selectedAgentBusSessions = sessionFeed.sessions;

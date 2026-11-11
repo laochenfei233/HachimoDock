@@ -1,5 +1,11 @@
 //! Owner-only local capability bootstrap shared by approval and voice callers.
 //! Credentials are never obtained from HTTP, URLs, redirects, or diagnostics.
+//!
+//! Two bridge kinds share this loader: the DeepSeek Harness plugin
+//! (`~/.claw-pet/dsh-bridge/`) and the prism fork's plugin
+//! (`~/.claw-pet/prism-bridge/`). Both speak the same protocol v2 with their
+//! own descriptor, epoch, and tokens; a credential is never read from the
+//! other kind's directory.
 use serde_json::Value;
 use std::io::Read;
 use std::path::PathBuf;
@@ -12,14 +18,37 @@ pub(crate) struct Capability {
     pub token: String,
 }
 
-pub(crate) fn load(role: &str) -> Result<Capability, String> {
-    let file = std::env::var_os("HACHIMODOCK_DSH_CAPABILITY_FILE")
+/// Which bridge's descriptor a caller reads; the paths never overlap.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Bridge {
+    Dsh,
+    Prism,
+}
+
+fn descriptor_file(bridge: Bridge) -> Result<PathBuf, String> {
+    let env_key = match bridge {
+        Bridge::Dsh => "HACHIMODOCK_DSH_CAPABILITY_FILE",
+        Bridge::Prism => "HACHIMODOCK_PRISM_CAPABILITY_FILE",
+    };
+    let relative = match bridge {
+        Bridge::Dsh => ".claw-pet/dsh-bridge/capability.json",
+        Bridge::Prism => ".claw-pet/prism-bridge/capability.json",
+    };
+    std::env::var_os(env_key)
         .map(PathBuf::from)
         .or_else(|| {
             std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-                .map(|h| PathBuf::from(h).join(".claw-pet/dsh-bridge/capability.json"))
+                .map(|h| PathBuf::from(h).join(relative))
         })
-        .ok_or("DSH capability unavailable")?;
+        .ok_or("DSH capability unavailable")
+}
+
+pub(crate) fn load(role: &str) -> Result<Capability, String> {
+    load_bridge(Bridge::Dsh, role)
+}
+
+pub(crate) fn load_bridge(bridge: Bridge, role: &str) -> Result<Capability, String> {
+    let file = descriptor_file(bridge)?;
     let dir = file.parent().ok_or("DSH capability unavailable")?;
     let dm = std::fs::symlink_metadata(dir).map_err(|_| "DSH unpaired")?;
     if !dm.is_dir() || dm.file_type().is_symlink() {
@@ -149,6 +178,7 @@ pub(crate) fn post(cap: &Capability, path: &str, body: &Value) -> Result<Value, 
         "/interrupt",
         "/approval/decision",
         "/relay/close",
+        "/sessions/activate",
     ]
     .contains(&path)
     {

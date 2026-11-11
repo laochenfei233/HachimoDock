@@ -36,12 +36,20 @@ class DshAdapter extends BaseAdapter {
    * @param {NodeJS.ProcessEnv} [opts.env]   defaults to process.env
    * @param {string} [opts.baseUrl]          testing seam; overrides HACHIMODOCK_DSH_URL
    * @param {number} [opts.healthTimeoutMs]  testing seam; defaults to 2000
+   * @param {string} [opts.label]            bridge display label used in diagnostics; defaults to DSH
+   * @param {string} [opts.capabilityFile]   descriptor override; defaults to the DSH descriptor
+   * @param {string} [opts.agentId]          public agent id; defaults to deepseek-harness
+   * @param {Function} [opts.acl]            testing seam; replaces the Windows ACL verifier
    */
-  constructor({ log, env, baseUrl, healthTimeoutMs = HEALTH_TIMEOUT_MS } = {}) {
-    super({ agentId: "deepseek-harness", log });
+  constructor({ log, env, baseUrl, healthTimeoutMs = HEALTH_TIMEOUT_MS, label = "DSH", capabilityFile, agentId = "deepseek-harness", acl } = {}) {
+    super({ agentId, log });
     this._env = env || process.env;
+    this._label = label;
     this._baseUrl = DEFAULT_BASE_URL; // Only the verified private descriptor can select an authenticated endpoint.
-    this._capabilityFile = this._env.HACHIMODOCK_DSH_CAPABILITY_FILE || path.join(os.homedir(), '.claw-pet', 'dsh-bridge', 'capability.json');
+    this._capabilityFile = capabilityFile
+      || this._env.HACHIMODOCK_DSH_CAPABILITY_FILE
+      || path.join(os.homedir(), '.claw-pet', 'dsh-bridge', 'capability.json');
+    this._acl = typeof acl === 'function' ? acl : null;
     this._healthTimeoutMs = Number.isFinite(healthTimeoutMs) && healthTimeoutMs > 0
       ? healthTimeoutMs
       : HEALTH_TIMEOUT_MS;
@@ -53,7 +61,7 @@ class DshAdapter extends BaseAdapter {
   }
 
   _auth() {
-    const d = readCapability(this._capabilityFile);
+    const d = readCapability(this._capabilityFile, this._acl ?? undefined);
     this._baseUrl = resolveBaseUrl(d.baseUrl);
     return { authorization: `Bearer ${d.tokens.bus}` };
   }
@@ -66,26 +74,26 @@ class DshAdapter extends BaseAdapter {
     } catch (error) {
       return {
         ready: false,
-        reason: `无法连接 DSH 桥接插件（${this._baseUrl}）: ${describeError(error)}`,
+        reason: `无法连接 ${this._label} 桥接插件（${this._baseUrl}）: ${describeError(error)}`,
       };
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return {
         ready: false,
-        reason: `DSH 桥接插件 /health 返回 HTTP ${response.statusCode}`,
+        reason: `${this._label} 桥接插件 /health 返回 HTTP ${response.statusCode}`,
       };
     }
     let payload;
     try {
       payload = JSON.parse(response.body);
     } catch {
-      return { ready: false, reason: "DSH 桥接插件 /health 未返回 JSON" };
+      return { ready: false, reason: `${this._label} 桥接插件 /health 未返回 JSON` };
     }
     if (!payload || !Array.isArray(payload.sessions) || payload.version !== 2) {
       const error = payload && typeof payload.error === "string" ? payload.error.trim() : "";
       return {
         ready: false,
-        reason: error ? `DSH 桥接插件未就绪: ${error}` : "DSH 桥接插件未就绪",
+        reason: error ? `${this._label} 桥接插件未就绪: ${error}` : `${this._label} 桥接插件未就绪`,
       };
     }
     const version = Number(payload.version);
@@ -103,18 +111,18 @@ class DshAdapter extends BaseAdapter {
       const auth = this._auth();
       response = await requestJson(this._baseUrl, "/sessions", { timeoutMs: SESSIONS_TIMEOUT_MS, headers: auth });
     } catch (error) {
-      this.log("warn", "DSH sessions request failed", { error: describeError(error) });
+      this.log("warn", `${this._label} sessions request failed`, { error: describeError(error) });
       return [];
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      this.log("warn", "DSH sessions request failed", { status: response.statusCode });
+      this.log("warn", `${this._label} sessions request failed`, { status: response.statusCode });
       return [];
     }
     let payload;
     try {
       payload = JSON.parse(response.body);
     } catch {
-      this.log("warn", "DSH sessions response was not JSON");
+      this.log("warn", `${this._label} sessions response was not JSON`);
       return [];
     }
     const rows = payload && Array.isArray(payload.sessions) ? payload.sessions : [];
@@ -126,7 +134,7 @@ class DshAdapter extends BaseAdapter {
   }
 
   async openNew({ cwd } = {}) {
-    throw new Error("DSH requires an explicit existing session; no auto target")
+    throw new Error(`${this._label} requires an explicit existing session; no auto target`)
   }
 
   async *inject({ sessionId, text, signal } = {}) {
@@ -135,7 +143,7 @@ class DshAdapter extends BaseAdapter {
       return;
     }
     if (typeof sessionId !== 'string' || !sessionId || sessionId === 'auto' || sessionId.length > 200) {
-      yield { kind: 'error', code: 'EXACT_SESSION_REQUIRED', message: 'DSH requires an explicit session' }; return;
+      yield { kind: 'error', code: 'EXACT_SESSION_REQUIRED', message: `${this._label} requires an explicit session` }; return;
     }
     const requestedSessionId = sessionId;
     const body = JSON.stringify({
@@ -155,7 +163,7 @@ class DshAdapter extends BaseAdapter {
         yield {
           kind: "error",
           code: "AGENT_UNAVAILABLE",
-          message: `DSH 注入请求失败: ${describeError(error)}`,
+          message: `${this._label} 注入请求失败: ${describeError(error)}`,
         };
       }
       return;
@@ -169,7 +177,7 @@ class DshAdapter extends BaseAdapter {
       yield {
         kind: "error",
         code: "AGENT_UNAVAILABLE",
-        message: `DSH 注入请求返回 HTTP ${statusCode}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+        message: `${this._label} 注入请求返回 HTTP ${statusCode}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
       };
       return;
     }
@@ -187,7 +195,7 @@ class DshAdapter extends BaseAdapter {
       res.setEncoding("utf8");
       for await (const chunk of res) {
         buffer = (buffer + chunk).replace(/\r\n?/g, "\n");
-        if (buffer.length > 65536) throw new Error("DSH SSE frame too large");
+        if (buffer.length > 65536) throw new Error(`${this._label} SSE frame too large`);
         let separator;
         while ((separator = buffer.indexOf("\n\n")) >= 0) {
           const block = buffer.slice(0, separator);
@@ -217,7 +225,7 @@ class DshAdapter extends BaseAdapter {
         yield {
           kind: "error",
           code: "AGENT_STREAM_FAILED",
-          message: `DSH 注入流中断: ${describeError(error)}`,
+          message: `${this._label} 注入流中断: ${describeError(error)}`,
         };
         return;
       }
@@ -231,7 +239,7 @@ class DshAdapter extends BaseAdapter {
       return;
     }
     if (!sawTerminal) {
-      yield { kind: 'error', code: 'DELIVERY_UNKNOWN', message: 'DSH stream ended without an admission receipt; no resend' };
+      yield { kind: 'error', code: 'DELIVERY_UNKNOWN', message: `${this._label} stream ended without an admission receipt; no resend` };
     }
   }
 }
@@ -241,19 +249,20 @@ function resolveBaseUrl(raw) {
   if (u.protocol !== 'http:' || u.hostname !== '127.0.0.1' || !u.port || u.username || u.password || u.pathname !== '/' || u.search || u.hash) throw new Error('DSH requires an exact loopback endpoint');
   return u.origin;
 }
-function readCapability(file) {
+function readCapability(file, aclOverride) {
+  const acl = aclOverride || windowsAcl;
   const check = (st, dir) => {
     if (st.isSymbolicLink() || (dir ? !st.isDirectory() : !st.isFile()) || process.platform !== 'win32' && ((st.mode & 0o077) || process.getuid && st.uid !== process.getuid())) throw new Error('unsafe DSH capability');
   };
   const win = process.platform === 'win32';
-  if (win) { file = windowsPath(file); windowsAcl('verify-file', file); }
+  if (win) { file = windowsPath(file); acl('verify-file', file); }
   check(fs.lstatSync(path.dirname(file)), true);
   check(fs.lstatSync(file), false);
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   try {
     const st = fs.fstatSync(fd); check(st, false);
     if (st.size > 4096) throw new Error('invalid DSH capability');
-    if (win) windowsAcl('verify-file', file);
+    if (win) acl('verify-file', file);
     const d = JSON.parse(fs.readFileSync(fd, 'utf8'));
     resolveBaseUrl(d.baseUrl);
     if (d.version !== 2 || !/^[a-f0-9]{64}$/.test(d.epoch) || !/^[a-f0-9]{64}$/.test(d.tokens?.bus)) throw new Error('invalid DSH capability');
@@ -277,7 +286,7 @@ function requestJson(baseUrl, pathname, { timeoutMs = SESSIONS_TIMEOUT_MS, heade
     }, (res) => {
       let body = "";
       res.setEncoding("utf8");
-      res.on("data", (chunk) => { body += chunk; if (body.length > 65536) { res.destroy(); reject(new Error("DSH response too large")); } });
+      res.on("data", (chunk) => { body += chunk; if (body.length > 65536) { res.destroy(); reject(new Error("bridge response too large")); } });
       res.on("end", () => resolve({ statusCode: Number(res.statusCode) || 0, body }));
       res.on("error", reject);
     });

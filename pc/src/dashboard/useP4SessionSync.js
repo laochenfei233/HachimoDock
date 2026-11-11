@@ -119,6 +119,7 @@ export function useP4SessionSync({
   dismissedSessions,
   onDismissSessions,
   formatSessionOption,
+  onActivatedSession,
   push,
 }) {
   const [selection, setSelection] = useState({ sessionId: "auto", selectedAt: 0 });
@@ -406,6 +407,12 @@ export function useP4SessionSync({
           ) || "",
         };
         onSessionChange(nextSessionId);
+        // The device picked a conversation; agents with a switch bridge (prism)
+        // also move their desktop conversation. Fire-and-forget: a bridge
+        // failure must not roll back the device-side selection.
+        try {
+          onActivatedSession?.(nextSessionId);
+        } catch {}
         requestBindingSync();
       });
       unlistenCurrentVoice = await listen("voice-transcript", (event) => {

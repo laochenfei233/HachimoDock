@@ -38,6 +38,11 @@ export const FIXED_AGENT_OPTIONS = [
     detail: "DeepSeek Harness 桌面对话与本地桥接渠道",
   },
   {
+    id: "prism-agent",
+    label: "Prism",
+    detail: "Prism（DeepSeek Harness 分支）桌面对话、本地桥接与会话切换渠道",
+  },
+  {
     id: "workbuddy",
     label: "WorkBuddy",
     detail: "WorkBuddy 状态与气泡跟随；向当前可见对话追加语音草稿",

@@ -19,6 +19,7 @@ const {
   MiMoCodeAdapter,
   WorkBuddyAdapter,
   DshAdapter,
+  PrismAdapter,
 } = require("./index");
 const { defaultLog, withScope } = require("./log");
 const { readBool } = require("./env");
@@ -41,6 +42,7 @@ async function main() {
   adapters.push(new MiMoCodeAdapter({ log: withScope(defaultLog, "mimocode") }));
   adapters.push(new WorkBuddyAdapter({ log: withScope(defaultLog, "workbuddy") }));
   adapters.push(new DshAdapter({ log: withScope(defaultLog, "dsh") }));
+  adapters.push(new PrismAdapter({ log: withScope(defaultLog, "prism") }));
 
   const bus = createAgentSessionBus({ adapters, log: withScope(defaultLog, "bus") });
   const port = await bus.start();

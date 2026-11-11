@@ -33,7 +33,7 @@ function installStorage(initial = {}) {
   return values;
 }
 
-test("the six fixed Agents put ChatGPT（Codex） first and use it as the first-run default", () => {
+test("the seven fixed Agents put ChatGPT（Codex） first and use it as the first-run default", () => {
   assert.equal(DEFAULT_AGENT_ID, "codex");
   assert.deepEqual(
     FIXED_AGENT_OPTIONS.map((agent) => agent.id),
@@ -43,6 +43,7 @@ test("the six fixed Agents put ChatGPT（Codex） first and use it as the first-
       "openclaw",
       "mimocode",
       "deepseek-harness",
+      "prism-agent",
       "workbuddy",
     ],
   );
