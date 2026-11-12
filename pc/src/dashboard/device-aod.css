@@ -1,0 +1,8 @@
+.device-aod { display: grid; gap: 12px; }
+.device-aod__row { display: flex; align-items: center; gap: 12px; }
+.device-aod__row label { width: 84px; flex: none; font-size: 13px; }
+.device-aod__items { display: flex; gap: 8px; }
+.device-aod__items select { min-width: 130px; }
+.device-aod__presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.device-aod__message { margin: 0; font-size: 12px; color: var(--text-secondary, #9e9b94); }
+.device-aod__message[role="alert"] { color: var(--warning, #e4a76c); }

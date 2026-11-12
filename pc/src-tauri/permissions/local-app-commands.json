@@ -103,6 +103,7 @@
           "usb_audio_capture_control",
           "usb_get_status",
           "usb_device_volume",
+          "usb_display_aod",
           "usb_set_screen_page",
           "usb_activate_installed_widget",
           "usb_get_background_programs",
@@ -149,7 +150,8 @@
           "purge_clawpkg_sync_cache",
           "dsh_connection_status",
           "connect_dsh_desktop",
-          "dsh_pair_session"
+          "dsh_pair_session",
+          "prism_activate_session"
         ]
       }
     }

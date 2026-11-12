@@ -50,6 +50,7 @@ import PersonaVoiceModal from "./PersonaVoiceModal.jsx";
 import { useToast } from "./shell/ToastStack.jsx";
 import DeviceStatusBar from "./dashboard/DeviceStatusBar.jsx";
 import DeviceVolumePanel from "./dashboard/DeviceVolumePanel.jsx";
+import DeviceAodPanel from "./dashboard/DeviceAodPanel.jsx";
 import SharedLocationPanel from "./dashboard/SharedLocationPanel.jsx";
 import { createSharedLocationController } from "./dashboard/shared-location-model.js";
 import { useExitProtection } from "./lib/exit-protection.js";
@@ -1621,6 +1622,9 @@ export default function DeviceDashboard({ active = true, binding, onUnbind, onOp
 
       <Card title="设备总音量">
         <DeviceVolumePanel usb={usb} active={active} />
+      </Card>
+      <Card title="息屏灵动岛">
+        <DeviceAodPanel usb={usb} active={active} />
       </Card>
       <Card>
         <SharedLocationPanel active={active} controller={locationController} />
