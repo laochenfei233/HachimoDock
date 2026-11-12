@@ -67,10 +67,10 @@ HachimoDock（哈基米机）是面向 AI Agent 的桌面交互终端，由 Wind
 
 ### Agent 兼容范围
 
-当前适配 ChatGPT（Codex）、Claude、OpenClaw、MiMoCode、WorkBuddy、DeepSeek Harness 和 Prism。**状态跟随、语音草稿、确认发送与桌面对话切换是不同能力**；检测到程序不代表其输入框已可用。
+当前适配 ChatGPT（Codex）、Claude、OpenClaw、MiMoCode、WorkBuddy、DeepSeek Harness、Prism 和 ZCode。**状态跟随、语音草稿、确认发送与桌面对话切换是不同能力**；检测到程序不代表其输入框已可用。
 
-- ChatGPT（Codex）、Claude、WorkBuddy、DeepSeek Harness 的桌面语音输入依赖当前可用的系统辅助功能输入框。
-- WorkBuddy 与 DeepSeek 的目标对话需在对应应用中打开；设备气泡选择不会自动切换它们的桌面对话。Prism（prism-agent）的设备气泡选择会通过其桥接插件切换桌面对话。
+- ChatGPT（Codex）、Claude、WorkBuddy、DeepSeek Harness、ZCode 的桌面语音输入依赖当前可用的系统辅助功能输入框。
+- WorkBuddy、DeepSeek 与 ZCode 的目标对话需在对应应用中打开；设备气泡选择不会自动切换它们的桌面对话。Prism（prism-agent）的设备气泡选择会通过其桥接插件切换桌面对话。ZCode 的状态来自其本地日志与会话存储，不含回复正文与 token 统计。
 - MiMoCode 的语音支持与平台相关；OpenClaw 使用其会话路由。具体限制见 [Agent 接入与兼容说明](pc/docs/agent-integration-audit.md)。
 - 目标不明确、输入框不可用或提交结果未知时，本次操作会停止；不会选取最近的历史会话或自动重复发送。
 

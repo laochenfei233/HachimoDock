@@ -74,6 +74,7 @@ test("device conversation switching targets only explicit sessions of switch-cap
   assert.equal(switchableDesktopSession("prism-agent", ""), "");
   assert.equal(switchableDesktopSession("deepseek-harness", "s-1"), "");
   assert.equal(switchableDesktopSession("workbuddy", "s-1"), "");
+  assert.equal(switchableDesktopSession("zcode", "s-1"), "");
   assert.equal(switchableDesktopSession("", "s-1"), "");
 });
 

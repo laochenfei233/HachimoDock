@@ -47,6 +47,11 @@ export const FIXED_AGENT_OPTIONS = [
     label: "WorkBuddy",
     detail: "WorkBuddy 状态与气泡跟随；向当前可见对话追加语音草稿",
   },
+  {
+    id: "zcode",
+    label: "ZCode",
+    detail: "ZCode 桌面渠道:状态跟随与当前可见输入框语音",
+  },
 ];
 
 export function loadEnabledAgents() {

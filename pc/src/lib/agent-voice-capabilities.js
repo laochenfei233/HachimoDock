@@ -6,6 +6,10 @@ export function deviceVoicePlatformWarning(agentId, platform) {
 export function deviceVoiceTransportReady(agentId, platform, cliReady) {
   // macOS Codex drafts use the native desktop input path. CLI readiness
   // describes a different transport; native permission/window checks run at use.
-  return (platform === "macos" && agentId === "codex") || cliReady === true;
+  // ZCode shares WorkBuddy's current-visible draft model on macOS and Windows:
+  // its only transport is the visible desktop input box, so no CLI is needed.
+  return (platform === "macos" && agentId === "codex")
+    || (["macos", "windows"].includes(platform) && agentId === "zcode")
+    || cliReady === true;
 }
 

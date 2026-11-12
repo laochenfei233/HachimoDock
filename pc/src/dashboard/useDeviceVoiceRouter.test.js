@@ -49,6 +49,17 @@ test("WorkBuddy describes final-only append without promising streaming editor w
   assert.match(transcriptMessage({ agentId: "codex" }, "partial", "visible"), /实时识别并同步/);
 });
 
+test("ZCode dictation names the ZCode visible input box in press-and-hold hints", () => {
+  // ZCode streams draft partials like Codex (agent_streams_voice_draft), so
+  // the listening copy is the streaming one, not WorkBuddy's one-shot append.
+  assert.match(transcriptMessage({ agentId: "zcode" }, "listening", "visible"), /实时同步到 ZCode 输入框/);
+  assert.doesNotMatch(transcriptMessage({ agentId: "zcode" }, "listening", "visible"), /一次追加/);
+  assert.match(transcriptMessage({ agentId: "zcode" }, "partial", "visible"), /同步到 ZCode/);
+  assert.match(transcriptMessage({ agentId: "zcode" }, "draft_ready", "visible"), /已追加到 ZCode 输入框/);
+  assert.match(transcriptMessage({ agentId: "zcode" }, "submitted", "visible"), /已通过 ZCode 可见输入框发送/);
+  assert.doesNotMatch(transcriptMessage({ agentId: "zcode" }, "listening", "visible"), /ChatGPT|Codex|WorkBuddy|Prism/);
+});
+
 function transcript(state, value) {
   return deviceVoiceRouterReducer(state, {
     type: "transcript",
