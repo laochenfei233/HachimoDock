@@ -541,13 +541,16 @@ pub(crate) fn prefetch(id:&str,d:&crate::app_services::Declaration)->Result<(),S
     request_internal(id,d,"prefetch",None,false,&Value::Null,true).map(|_|())
 }
 pub(crate) fn prepare_audio(board:&str){
-    let Ok(cfg)=crate::component_voice::preparation_config(board)else{return;};
     let now=chrono::Utc::now().timestamp();
     let batches:Vec<_>=sessions().lock().unwrap().iter().filter_map(|(id,s)|{
         if let Some(p)=&s.pending{return Some((id.clone(),speech_items(&p.items,p.generated_at)));}
         reusable(s,now).then(||(id.clone(),speech_items(&s.items,s.started)))
     }).collect();
-    for(id,items)in batches{crate::component_audio::prepare_news_voice(&id,board,cfg.clone(),items);}
+    for(id,items)in batches{
+        // 引擎不可克隆：每个批次单独解析一次 setup（WARM 守卫保证实际只有首个批次会启动合成线程）。
+        let Ok(setup)=crate::component_voice::preparation_config(board)else{return;};
+        crate::component_audio::prepare_news_voice(&id,board,setup,items);
+    }
 }
 fn speech_items(items:&[Item],at:i64)->Vec<crate::component_audio::SpeechItem>{
     items.iter().enumerate().map(|(index,i)|crate::component_audio::SpeechItem{id:index.to_string(),text:crate::knowledge_narration::speech_parts(&spoken_title(i,index,at),&i.text).concat()}).collect()

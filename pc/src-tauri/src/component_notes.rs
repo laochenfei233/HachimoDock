@@ -1,5 +1,5 @@
 //! Component-scoped voice drafts. No desktop injection; saving needs an explicit action.
-use crate::{usb_serial::UsbSerialManager,volcengine_asr::{StreamingSpeechRecognizer,StreamingSpeechEvent}};
+use crate::{usb_serial::UsbSerialManager,volcengine_asr::StreamingSpeechEvent};
 use serde::{Deserialize,Serialize};use serde_json::{json,Value};
 use std::{path::Path,sync::{Arc,Mutex,OnceLock},time::{Duration,Instant},io::Write};
 mod control;
@@ -67,7 +67,7 @@ fn owns_audio(data:&CaptureData,token:&str,topic:&str,payload:&Value)->bool{
     if topic=="audio/begin"{return payload["captureOwner"]==token&&(data.session.is_empty()||payload["sessionId"]==data.session);}
     !data.session.is_empty()&&payload["sessionId"]==data.session
 }
-struct Capture{generation:u64,control:control::Ticket,owner:crate::component_app::MediaAuthority,id:String,board:String,connection:String,boot:String,token:String,data:Mutex<CaptureData>,asr:Mutex<Option<StreamingSpeechRecognizer>>,relay:Mutex<crate::usb_audio::UsbAudioRelay>,usb:UsbSerialManager,started:Instant}
+struct Capture{generation:u64,control:control::Ticket,owner:crate::component_app::MediaAuthority,id:String,board:String,connection:String,boot:String,token:String,data:Mutex<CaptureData>,asr:Mutex<Option<Box<dyn crate::speech::SpeechRecognizer>>>,relay:Mutex<crate::usb_audio::UsbAudioRelay>,usb:UsbSerialManager,started:Instant}
 static ACTIVE:OnceLock<Mutex<Option<Arc<Capture>>>>=OnceLock::new();
 fn active()->&'static Mutex<Option<Arc<Capture>>>{ACTIVE.get_or_init(Default::default)}
 fn current(id:&str)->Option<Arc<Capture>>{active().lock().ok()?.as_ref().filter(|c|c.id==id).cloned()}
@@ -157,7 +157,7 @@ fn finish_start(c:&Capture)->bool{
     c.control.start_returned();
     c.control.requested()||!c.owner.is_current()
 }
-fn prepare_and_start(c:&Arc<Capture>,factory:impl FnOnce()->Result<StreamingSpeechRecognizer,String>,send:&dyn Fn(&str)->Result<(),String>)->Result<(),String>{
+fn prepare_and_start(c:&Arc<Capture>,factory:impl FnOnce()->Result<Box<dyn crate::speech::SpeechRecognizer>,String>,send:&dyn Fn(&str)->Result<(),String>)->Result<(),String>{
     {let slot=active().lock().unwrap();let d=c.data.lock().unwrap();
         if !slot.as_ref().is_some_and(|v|v.token==c.token)||!c.owner.is_current()||d.phase!="starting"||c.control.requested(){c.control.prepared();c.control.request();wake_control();return Err("录音请求已撤销，未准备识别会话".into());}
     }
@@ -205,7 +205,7 @@ fn start(id:&str,usb:&UsbSerialManager)->Result<(),String>{
     })();
     if let Err(error)=preparation{control_slot().release(&c);return Err(error);}
     let callback=c.clone();
-    prepare_and_start(&c,||StreamingSpeechRecognizer::start(move|event|{
+    prepare_and_start(&c,||crate::asr_engine::create(move|event|{
         handle_speech_event(&callback,event);
     }).map_err(|_|"云端语音识别未配置或不可用".to_string()),&|action|control(&c,action))?;
     let timer=c.clone();std::thread::spawn(move||{
@@ -357,6 +357,7 @@ pub fn stop_recording_all(){let c=active().lock().ok().and_then(|v|v.clone());if
 
 #[cfg(test)]mod tests{
     use super::*;
+    use crate::volcengine_asr::StreamingSpeechRecognizer;
     pub(super) static CAPTURE_TEST:Mutex<()>=Mutex::new(());
     fn fake_capture(id:&str,phase:&str)->Arc<Capture>{
         Arc::new(Capture{generation:1,control:Default::default(),owner:crate::component_app::MediaAuthority{request:crate::component_runtime_lifecycle::ResourceOwner::fresh(),view:None},id:id.into(),board:"test".into(),connection:"test-connection".into(),boot:"test-boot".into(),token:uuid::Uuid::new_v4().to_string(),data:Mutex::new(CaptureData{phase:phase.into(),text:"未保存的想法".into(),..Default::default()}),asr:Mutex::new(None),relay:Mutex::new(Default::default()),usb:UsbSerialManager::new(),started:Instant::now()})
@@ -370,7 +371,7 @@ pub fn stop_recording_all(){let c=active().lock().ok().and_then(|v|v.clone());if
             let worker=std::thread::spawn(move||{
                 let commands=Mutex::new(Vec::new());let (asr,_sink)=StreamingSpeechRecognizer::test_sink();
                 let result=prepare_and_start(&pending,||{
-                    ready_tx.send(()).unwrap();resume_rx.recv_timeout(Duration::from_secs(5)).unwrap();Ok(asr)
+                    ready_tx.send(()).unwrap();resume_rx.recv_timeout(Duration::from_secs(5)).unwrap();Ok(Box::new(asr) as Box<dyn crate::speech::SpeechRecognizer>)
                 },&|action|{commands.lock().unwrap().push(action.to_string());Ok(())});
                 assert!(result.is_err());assert!(commands.lock().unwrap().is_empty());
                 assert!(pending.asr.lock().unwrap().as_ref().unwrap().push_pcm(&[0,0]).is_err());
@@ -388,7 +389,7 @@ pub fn stop_recording_all(){let c=active().lock().ok().and_then(|v|v.clone());if
         let _serial=CAPTURE_TEST.lock().unwrap();let c=fake_capture("phase2-start-order","starting");
         *active().lock().unwrap()=Some(c.clone());
         let commands=Mutex::new(Vec::new());let (asr,_sink)=StreamingSpeechRecognizer::test_sink();
-        assert!(prepare_and_start(&c,||Ok(asr),&|action|{
+        assert!(prepare_and_start(&c,||Ok(Box::new(asr) as Box<dyn crate::speech::SpeechRecognizer>),&|action|{
             commands.lock().unwrap().push(action.to_string());
             if action=="start"{c.owner.request.cancel();stop_recording(&c.id);assert!(c.control.requested());}
             Ok(())
@@ -466,7 +467,7 @@ pub fn stop_recording_all(){let c=active().lock().ok().and_then(|v|v.clone());if
         {let c=Arc::get_mut(&mut c).unwrap();c.connection="1".into();c.boot="0123456789abcdef".into();}
         c.data.lock().unwrap().text.clear();
         assert_eq!(c.relay.lock().unwrap().configure_owned_scoped(true,crate::usb_audio::DEFAULT_PCM_RELAY_PORT,false,&c.board,&c.connection,&c.boot,&c.token)["ok"],true);
-        let (asr,sink)=StreamingSpeechRecognizer::test_sink();*c.asr.lock().unwrap()=Some(asr);
+        let (asr,sink)=StreamingSpeechRecognizer::test_sink();*c.asr.lock().unwrap()=Some(Box::new(asr) as Box<dyn crate::speech::SpeechRecognizer>);
         c.control.prepared();assert!(c.control.admit_start());c.control.start_returned();
         control_slot().reserve(&c).unwrap();*active().lock().unwrap()=Some(c.clone());
         (c,sink)

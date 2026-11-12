@@ -752,7 +752,7 @@ pub fn transcribe_pcm_s16le(_pcm: &[u8]) -> Result<String, String> {
     Err("built-in speech recognition is currently available on Windows only".to_string())
 }
 
-pub use crate::volcengine_asr::{StreamingSpeechEvent, StreamingSpeechRecognizer};
+pub use crate::volcengine_asr::StreamingSpeechEvent;
 
 pub fn fallback_gesture(topic: &str, payload: &Value) -> Option<&'static str> {
     if topic != "input/event"
@@ -949,7 +949,7 @@ try {
         }
         let pcm = pcm.expect("synthesized WAV must contain PCM data");
         let (sender, receiver) = mpsc::channel();
-        let recognizer = StreamingSpeechRecognizer::start(move |event| {
+        let recognizer: Box<dyn crate::speech::SpeechRecognizer> = crate::asr_engine::create(move |event| {
             let _ = sender.send(event);
         })
         .unwrap();

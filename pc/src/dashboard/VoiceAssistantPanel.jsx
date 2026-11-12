@@ -1,6 +1,6 @@
 /**
  * [Input] state (busStatus/busSessions/busSessionId/voiceRuntime/audioBridge{*}/mockInject/deviceVoiceFlow/selectedAgentId/deviceOnline) + dispatch + toggleAudioBridge/sendMockButtonInject + voiceConfig + selectedTrigger + onVoiceConfigChange/onVoiceEnabledChange + API-settings navigation.
- * [Output] Region 4: a compact voice console with draft-only long-press recognition, explicit Confirm-key delivery, desktop composer labels, and permission/foreground recovery tips.
+ * [Output] Region 4: a compact voice console with draft-only long-press recognition, explicit Confirm-key delivery, desktop composer labels, provider-aware ASR status copy, and permission/foreground recovery tips.
  * [Pos] component node in pc/src/dashboard
  * [Sync] If this file changes, update `pc/src/dashboard/.folder.md`.
  */
@@ -21,7 +21,7 @@ import {
   Send,
   ShieldAlert,
 } from "lucide-react";
-import { API_CONFIGURATION_UPDATED_EVENT } from "../lib/api-configuration.js";
+import { API_CONFIGURATION_UPDATED_EVENT, ASR_PROVIDER_PRESETS } from "../lib/api-configuration.js";
 import Switch from "../shell/Switch";
 import VoiceComposerCheck from "./VoiceComposerCheck.jsx";
 import { ensureOptionalDshDesktop } from "./DshConnectionPanel.jsx";
@@ -177,6 +177,7 @@ export default function VoiceAssistantPanel({
   const [asrState, setAsrState] = useState({
     loading: true,
     configured: false,
+    provider: "",
     tone: "muted",
     message: "正在读取云端识别配置...",
   });
@@ -202,6 +203,7 @@ export default function VoiceAssistantPanel({
           setAsrState({
             loading: false,
             configured: status?.configured === true,
+            provider: status?.provider || "",
             tone: status?.configured ? "success" : "muted",
             message: status?.message || "请前往 API 配置补充语音识别凭据",
           });
@@ -211,6 +213,7 @@ export default function VoiceAssistantPanel({
           setAsrState({
             loading: false,
             configured: false,
+            provider: "",
             tone: "error",
             message: `读取云端识别配置失败: ${error}`,
           });
@@ -271,6 +274,8 @@ export default function VoiceAssistantPanel({
     || Boolean(state.deviceVoiceFlow?.reply)
     || showAccessibilityGuidance;
   const formattedAudioBridgeMessage = runtimeCurrent ? formatVoiceUserMessage(state.audioBridgeMessage) : "";
+  // 识别服务商文案跟随已加载的 provider（读不到时退回通用文案）。
+  const asrProviderLabel = ASR_PROVIDER_PRESETS.find((preset) => preset.id === asrState.provider)?.label || "该服务商";
   const listenHint = !runtimeCurrent || state.voiceRuntime?.mode === "waiting_device"
     ? "正在等待设备握手确认"
     : listening
@@ -475,7 +480,7 @@ export default function VoiceAssistantPanel({
               <Cloud size={17} />
             </span>
             <span className="voice-panel__advanced-copy">
-              <strong>语音识别 API</strong>
+              <strong>{asrState.provider ? `语音识别 API · ${asrProviderLabel}` : "语音识别 API"}</strong>
               <small>{asrState.message}</small>
             </span>
             <span className={`voice-panel__asr-state is-${asrState.tone}`}>

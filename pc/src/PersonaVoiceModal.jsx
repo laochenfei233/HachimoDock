@@ -3,9 +3,10 @@
  *         `required` flag for the post-creation step, and the persona/voice helpers in
  *         `lib/persona-voice.js`.
  * [Output] The 人设与声音 modal: persona form (name, intro, style, address, language,
- *          forbidden, greeting) with one-tap templates, Doubao Seed TTS 2.0 voice picker
- *          (complete official catalog with language groups/search, or a cloned speaker id,
- *          speed, volume), validation, save via
+ *          forbidden, greeting) with one-tap templates, a per-appearance TTS provider select
+ *          (follow global / Doubao / DashScope / MiMo / custom) with provider-aware voice pickers
+ *          (Doubao catalog with language groups/search or a cloned speaker id; DashScope preset
+ *          voices plus free text; MiMo/custom free text; speed, volume), validation, save via
  *          `savePersonaVoice`, a "restore factory persona" action for the built-in Terrier,
  *          current-key chat instructions, API navigation without discarding drafts,
  *          shared realtime volume with native persistence, and a preview button that refreshes after speech configuration changes.
@@ -21,12 +22,14 @@ import { useDialogFocus } from "./component-center/use-dialog-focus.js";
 import { useExitProtection } from "./lib/exit-protection.js";
 import { savePersonaVoice } from "./lib/appearance-store.js";
 import UsageHelp from "./UsageHelp.jsx";
-import { API_CONFIGURATION_UPDATED_EVENT } from "./lib/api-configuration.js";
+import { API_CONFIGURATION_UPDATED_EVENT, TTS_PROVIDER_PRESETS } from "./lib/api-configuration.js";
 import {
   BUILTIN_TERRIER_PERSONA_VOICE,
   DOUBAO_SPEAKERS,
   PERSONA_LANGUAGE_OPTIONS,
   PERSONA_TEMPLATES,
+  TTS_PROVIDER_DOUBAO,
+  TTS_VOICE_PROVIDERS,
   VOICE_SPEED_RANGE,
   VOICE_VOLUME_RANGE,
   createDefaultPersonaVoice,
@@ -34,18 +37,24 @@ import {
   previewTextFor,
   speakerOptionsFor,
   validatePersonaVoice,
+  voiceOptionsFor,
   voiceSpecFor,
 } from "./lib/persona-voice.js";
 
-const PREVIEW_UNAVAILABLE_HINT = "请先在「API 配置 → 语音识别与合成」配置语音服务，再来试听。";
+const PREVIEW_UNAVAILABLE_HINT = "请先在「API 配置」里配置语音合成 Key，再来试听。";
 
-async function loadPreviewAvailability() {
+async function loadVoiceChatStatus() {
   try {
-    const status = await invoke("load_voice_chat_settings");
-    return status?.ttsConfigured === true;
+    return await invoke("load_voice_chat_settings");
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** 已解析服务商的展示名；volcengine 保留完整的豆包 Seed TTS 名称。 */
+function resolvedProviderLabel(providerId) {
+  if (providerId === "volcengine") return "豆包 Seed TTS 2.0";
+  return TTS_PROVIDER_PRESETS.find((preset) => preset.id === providerId)?.label || "";
 }
 
 async function playPersonaPreview(form) {
@@ -70,6 +79,7 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
   const [savedForm, setSavedForm] = useState(() => initialFormState(appearance));
   const [confirmingClose, setConfirmingClose] = useState(false);
   const [previewReady, setPreviewReady] = useState(Boolean(previewAvailableProp));
+  const [globalTtsProvider, setGlobalTtsProvider] = useState(null); // null = 全局服务商未读到
   useEffect(() => {
     if (previewAvailableProp !== undefined) {
       setPreviewReady(Boolean(previewAvailableProp));
@@ -79,7 +89,11 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
     let sequence = 0;
     const refresh = () => {
       const request = ++sequence;
-      loadPreviewAvailability().then((ready) => { if (!cancelled && request === sequence) setPreviewReady(ready); });
+      loadVoiceChatStatus().then((status) => {
+        if (cancelled || request !== sequence) return;
+        setPreviewReady(status?.ttsConfigured === true);
+        setGlobalTtsProvider(typeof status?.ttsProvider === "string" && status.ttsProvider ? status.ttsProvider : null);
+      });
     };
     refresh();
     window.addEventListener(API_CONFIGURATION_UPDATED_EVENT, refresh);
@@ -119,6 +133,24 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
     return [...groups];
   }, [speakerOptions]);
 
+  // 形象级合成服务商："" 跟随全局；复刻音色输入与豆包音色目录只在豆包下显示。
+  const isDoubaoVoice = !form.voice.provider || form.voice.provider === TTS_PROVIDER_DOUBAO;
+  const resolvedTtsProviderId = form.voice.provider
+    ? form.voice.provider.replace(/_tts$/, "")
+    : (globalTtsProvider || "");
+  const resolvedTtsLabel = resolvedProviderLabel(resolvedTtsProviderId);
+  // 试听 gating：跟随全局（或与全局一致）时按全局凭据就绪；显式换到其他服务商时放行——
+  // 缺 Key 由后端在合成时给出该服务商的明确错误提示。
+  const overridesGlobalProvider = Boolean(form.voice.provider) && globalTtsProvider !== null && resolvedTtsProviderId !== globalTtsProvider;
+  const previewAvailable = overridesGlobalProvider || previewReady;
+  const voiceSectionSubtitle = form.voice.provider
+    ? (resolvedTtsLabel || "自定义语音合成")
+    : (resolvedTtsLabel ? `跟随全局 · ${resolvedTtsLabel}` : "跟随全局");
+  const providerVoiceOptions = useMemo(
+    () => voiceOptionsFor(form.voice.provider, form.voice.speaker),
+    [form.voice.provider, form.voice.speaker],
+  );
+
   const updatePersona = useCallback((key, value) => {
     setForm((current) => ({ ...current, persona: { ...current.persona, [key]: value } }));
     setErrors((current) => (current[key] ? { ...current, [key]: undefined } : current));
@@ -126,6 +158,19 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
 
   const updateVoice = useCallback((key, value) => {
     setForm((current) => ({ ...current, voice: { ...current.voice, [key]: value } }));
+    setErrors((current) => (current.speaker ? { ...current, speaker: undefined } : current));
+  }, []);
+
+  // 切换形象级服务商：切到有预设音色的服务商且音色为空时，填入第一个预设音色。
+  const changeVoiceProvider = useCallback((providerId) => {
+    setForm((current) => {
+      const preset = TTS_PROVIDER_PRESETS.find((item) => item.id === (providerId ? providerId.replace(/_tts$/, "") : ""));
+      const voices = preset?.voices || [];
+      const speaker = providerId && providerId !== TTS_PROVIDER_DOUBAO && !current.voice.speaker.trim()
+        ? (voices[0] || "")
+        : current.voice.speaker;
+      return { ...current, voice: { ...current.voice, provider: providerId, speaker } };
+    });
     setErrors((current) => (current.speaker ? { ...current, speaker: undefined } : current));
   }, []);
 
@@ -336,43 +381,96 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
             <section className="persona-voice-modal__column">
               <div className="persona-voice-modal__section-head">
                 <strong>声音</strong>
-                <span className="muted small">豆包 Seed TTS 2.0</span>
+                <span className="muted small">{voiceSectionSubtitle}</span>
               </div>
               <label className="ui-field">
-                <span className="ui-field__label">搜索音色 · 共 {DOUBAO_SPEAKERS.length} 种</span>
-                <input className="field-input" type="search" value={speakerQuery}
-                  onChange={(event) => setSpeakerQuery(event.target.value)}
-                  placeholder="搜索名称、语言或音色 ID" disabled={saving} />
-              </label>
-              <label className="ui-field">
-                <span className="ui-field__label">音色</span>
+                <span className="ui-field__label">合成服务商</span>
                 <select
                   className="field-input"
-                  value={form.voice.speaker}
-                  onChange={(event) => updateVoice("speaker", event.target.value)}
+                  value={form.voice.provider}
+                  onChange={(event) => changeVoiceProvider(event.target.value)}
                   disabled={saving}
                 >
-                  {speakerGroups.map(([language, speakers]) => (
-                    <optgroup key={language} label={language}>
-                      {speakers.map((speaker) => <option key={speaker.id} value={speaker.id}>{speaker.label}</option>)}
-                    </optgroup>
+                  {TTS_VOICE_PROVIDERS.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
                   ))}
                 </select>
-                {speakerQuery.trim() && speakerOptions.every((speaker) => speaker.language === "当前音色") && (
-                  <span className="muted small">未找到匹配音色，已保留当前选择。</span>
-                )}
-                {errors.speaker && <span className="ui-field__error">{errors.speaker}</span>}
+                <span className="muted small">{isDoubaoVoice ? "豆包支持完整音色目录与复刻音色。" : "复刻音色仅豆包支持；此服务商下将忽略复刻字段。"}</span>
               </label>
-              <label className="ui-field">
-                <span className="ui-field__label">复刻音色 ID（可选，填了优先）</span>
-                <input
-                  className="field-input"
-                  value={form.voice.clone_speaker_id}
-                  onChange={(event) => updateVoice("clone_speaker_id", event.target.value)}
-                  placeholder="火山控制台声音复刻页申请所得，形如 S_xxxx"
-                  disabled={saving}
-                />
-              </label>
+              {isDoubaoVoice ? (
+                <>
+                  <label className="ui-field">
+                    <span className="ui-field__label">搜索音色 · 共 {DOUBAO_SPEAKERS.length} 种</span>
+                    <input className="field-input" type="search" value={speakerQuery}
+                      onChange={(event) => setSpeakerQuery(event.target.value)}
+                      placeholder="搜索名称、语言或音色 ID" disabled={saving} />
+                  </label>
+                  <label className="ui-field">
+                    <span className="ui-field__label">音色</span>
+                    <select
+                      className="field-input"
+                      value={form.voice.speaker}
+                      onChange={(event) => updateVoice("speaker", event.target.value)}
+                      disabled={saving}
+                    >
+                      {speakerGroups.map(([language, speakers]) => (
+                        <optgroup key={language} label={language}>
+                          {speakers.map((speaker) => <option key={speaker.id} value={speaker.id}>{speaker.label}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                    {speakerQuery.trim() && speakerOptions.every((speaker) => speaker.language === "当前音色") && (
+                      <span className="muted small">未找到匹配音色，已保留当前选择。</span>
+                    )}
+                    {errors.speaker && <span className="ui-field__error">{errors.speaker}</span>}
+                  </label>
+                  <label className="ui-field">
+                    <span className="ui-field__label">复刻音色 ID（可选，填了优先）</span>
+                    <input
+                      className="field-input"
+                      value={form.voice.clone_speaker_id}
+                      onChange={(event) => updateVoice("clone_speaker_id", event.target.value)}
+                      placeholder="火山控制台声音复刻页申请所得，形如 S_xxxx"
+                      disabled={saving}
+                    />
+                  </label>
+                </>
+              ) : resolvedTtsProviderId === "dashscope" ? (
+                <label className="ui-field">
+                  <span className="ui-field__label">音色</span>
+                  <select
+                    className="field-input"
+                    value={form.voice.speaker}
+                    onChange={(event) => updateVoice("speaker", event.target.value)}
+                    disabled={saving}
+                  >
+                    {!form.voice.speaker && <option value="">未选择</option>}
+                    {providerVoiceOptions.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="field-input"
+                    value={form.voice.speaker}
+                    onChange={(event) => updateVoice("speaker", event.target.value)}
+                    placeholder="也可直接填写服务商的音色 ID"
+                    disabled={saving}
+                  />
+                  {errors.speaker && <span className="ui-field__error">{errors.speaker}</span>}
+                </label>
+              ) : (
+                <label className="ui-field">
+                  <span className="ui-field__label">音色</span>
+                  <input
+                    className="field-input"
+                    value={form.voice.speaker}
+                    onChange={(event) => updateVoice("speaker", event.target.value)}
+                    placeholder="填写服务商的音色 ID 或描述"
+                    disabled={saving}
+                  />
+                  {errors.speaker && <span className="ui-field__error">{errors.speaker}</span>}
+                </label>
+              )}
               <div className="persona-voice-modal__row">
                 <label className="ui-field">
                   <span className="ui-field__label">语速 <em className="muted">{Number(form.voice.speed).toFixed(2)}</em></span>

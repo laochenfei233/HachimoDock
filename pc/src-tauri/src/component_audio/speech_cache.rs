@@ -9,11 +9,7 @@ static ROOT:OnceLock<PathBuf>=OnceLock::new();
 #[derive(Default)]struct Warm{key:String,running:bool,next:Option<Instant>}
 static WARM:Mutex<Warm>=Mutex::new(Warm{key:String::new(),running:false,next:None});
 pub(super) fn configure(root:PathBuf){let _=ROOT.set(root);}
-fn voice_key(cfg:&crate::doubao_tts::DoubaoTtsConfig)->String{
-    // Credential rotation must not invalidate identical public voice audio.
-    format!("news-pcm16-v1|{}|{}|{}|{}|{}",cfg.ws_url,cfg.resource_id,cfg.model,cfg.speaker,cfg.speed.to_bits())
-}
-fn key(cfg:&crate::doubao_tts::DoubaoTtsConfig,text:&str)->String{format!("{:x}",Sha256::digest(format!("{}|{text}",voice_key(cfg))))}
+fn key(cache_key:&str,text:&str)->String{format!("{:x}",Sha256::digest(format!("{}|{text}",cache_key)))}
 fn load_at(root:&Path,key:&str)->Option<Vec<u8>>{
     let path=root.join(format!("{key}.pcm"));let mut raw=Vec::new();
     std::fs::File::open(path).ok()?.take((MAX_PCM+41)as u64).read_to_end(&mut raw).ok()?;
@@ -41,34 +37,36 @@ fn prune(root:&Path){
     for(path,size,at)in files{if total<=MAX_DISK&&at.elapsed().map(|d|d.as_secs()<7*86400).unwrap_or(true){continue;}
         if std::fs::remove_file(path).is_ok(){total=total.saturating_sub(size);}}
 }
-pub(super) fn load(cfg:&crate::doubao_tts::DoubaoTtsConfig,text:&str)->Option<Vec<u8>>{load_at(ROOT.get()?,&key(cfg,text))}
-pub(super) fn save(cfg:&crate::doubao_tts::DoubaoTtsConfig,text:&str,pcm:&[u8]){if let Some(root)=ROOT.get(){let _=store_at(root,&key(cfg,text),pcm);}}
+pub(super) fn load(cache_key:&str,text:&str)->Option<Vec<u8>>{load_at(ROOT.get()?,&key(cache_key,text))}
+pub(super) fn save(cache_key:&str,text:&str,pcm:&[u8]){if let Some(root)=ROOT.get(){let _=store_at(root,&key(cache_key,text),pcm);}}
 fn busy()->bool{super::voice_busy()||super::active_for_exit()}
-pub(super) fn prepare(id:&str,board:&str,cfg:crate::doubao_tts::DoubaoTtsConfig,items:Vec<SpeechItem>){
+pub(super) fn prepare(id:&str,board:&str,setup:crate::voice_chat_settings::TtsEngineSetup,items:Vec<SpeechItem>){
     if ROOT.get().is_none()||busy(){return;}
-    let signature=format!("{:x}",Sha256::digest(format!("{}|{}|{:?}",id,voice_key(&cfg),items)));
+    let signature=format!("{:x}",Sha256::digest(format!("{}|{}|{:?}",id,setup.cache_key,items)));
     let Ok(mut state)=WARM.lock()else{return;};
     if state.running||state.key==signature&&state.next.is_some_and(|at|Instant::now()<at){return;}
     state.key=signature.clone();state.running=true;drop(state);
     let board=board.to_owned();let id=id.to_owned();
     let spawn=std::thread::Builder::new().name("news-voice-cache".into()).spawn(move||{
-        let interrupted=||busy()||!crate::component_news::background_enabled(&id)||crate::component_voice::preparation_config(&board).map(|current|voice_key(&current)!=voice_key(&cfg)).unwrap_or(true);
-        let mut client=crate::doubao_tts::DoubaoTtsClient::new(cfg.clone());
+        let cache_key=setup.cache_key;
+        let interrupted=||busy()||!crate::component_news::background_enabled(&id)||crate::component_voice::preparation_config(&board).map(|current|current.cache_key!=cache_key).unwrap_or(true);
+        let mut client=setup.engine;
         let mut hits=0usize;let mut made=0usize;
         let result=(||->Result<(),String>{
             for item in items{for part in crate::knowledge_narration::speech_parts("",&item.text){
                 if interrupted(){return Err("foreground_or_voice_changed".into());}
-                if load(&cfg,&part).is_some(){hits+=1;continue;}
+                if load(&cache_key,&part).is_some(){hits+=1;continue;}
                 let mut pcm=Vec::new();let mut overflow=false;
                 tauri::async_runtime::block_on(async{
-                    let future=client.synthesize(&part,|chunk|{if pcm.len()+chunk.len()<=MAX_PCM{pcm.extend_from_slice(chunk);}else{overflow=true;}});
+                    let mut sink=|chunk: &[u8]|{if pcm.len()+chunk.len()<=MAX_PCM{pcm.extend_from_slice(chunk);}else{overflow=true;}};
+                    let future=client.synthesize(&part,&mut sink);
                     tokio::select!{
                         result=tokio::time::timeout(Duration::from_secs(35),future)=>result.map_err(|_|"tts_timeout".to_string())?.map(|_|()).map_err(|_|"tts_failed".to_string()),
                         _=async{while !interrupted(){tokio::time::sleep(Duration::from_millis(100)).await;}}=>Err("foreground_or_voice_changed".into())
                     }
                 })?;
                 if overflow||pcm.is_empty(){return Err("tts_invalid_length".into());}
-                store_at(ROOT.get().unwrap(),&key(&cfg,&part),&pcm)?;made+=1;
+                store_at(ROOT.get().unwrap(),&key(&cache_key,&part),&pcm)?;made+=1;
             }}Ok(())
         })();
         tauri::async_runtime::block_on(client.reset());
@@ -91,7 +89,7 @@ pub(super) fn prepare(id:&str,board:&str,cfg:crate::doubao_tts::DoubaoTtsConfig,
         assert_eq!(std::env::var("PET_NEWS_CACHE_TEST").as_deref(),Ok("1"));
         let settings=PathBuf::from(std::env::var("P4_SERVICE_CONFIG").unwrap());
         crate::voice_chat_settings::configure_storage_dir(settings.clone()).unwrap();
-        crate::volcengine_asr::configure_storage_dir(settings.clone()).unwrap();
+        #[cfg(target_os="macos")]crate::volcengine_asr::configure_storage_dir(settings.clone()).unwrap(); // configure_storage_dir 仅 macOS 存在
         crate::llm_network::configure_storage_dir(settings.clone()).unwrap();
         let output=PathBuf::from(std::env::var("PET_NEWS_CACHE_DIR").unwrap());
         configure(output.clone());let content_root=output.join("state");std::fs::create_dir_all(content_root.join("daily-news")).unwrap();crate::component_news::configure_cache(content_root);
@@ -101,7 +99,7 @@ pub(super) fn prepare(id:&str,board:&str,cfg:crate::doubao_tts::DoubaoTtsConfig,
         let d:Value=serde_json::from_str(include_str!("../../../builtin-clawpkgs/daily-news/pc/application.json")).unwrap();
         crate::component_news::seed_verified_acceptance_report("daily-news",&PathBuf::from(std::env::var("PET_NEWS_REPORT").unwrap()),d["content"].as_array().unwrap());
         crate::component_voice::component_speech_set_pet_voice(Some(serde_json::from_value(voice.clone()).unwrap())).unwrap();
-        let cfg=crate::component_voice::config("cache-test-only").unwrap();
+        let setup=crate::component_voice::config("cache-test-only").unwrap();
         let declaration=serde_json::from_value(d).unwrap();
         let view=crate::component_news::request_with_surface("daily-news",&declaration,"status",None,false,&Value::Null).unwrap();
         let mut parts=Vec::new();
@@ -112,12 +110,13 @@ pub(super) fn prepare(id:&str,board:&str,cfg:crate::doubao_tts::DoubaoTtsConfig,
             if !WARM.lock().unwrap().running{break;}
             assert!(started.elapsed()<Duration::from_secs(300),"bounded warmup deadline");std::thread::sleep(Duration::from_millis(300));
         }
-        let read_started=Instant::now();let hits=parts.iter().filter(|p|load(&cfg,p).is_some()).count();
+        let read_started=Instant::now();let hits=parts.iter().filter(|p|load(&setup.cache_key,p).is_some()).count();
         assert_eq!(hits,parts.len(),"all nine stories must be completely cached");assert!(hits>=9);
         assert!(!super::super::active_for_exit());
         std::fs::write(output.join("acceptance.json"),serde_json::to_vec_pretty(&json!({"items":9,"parts":hits,"preparedMs":started.elapsed().as_millis(),"cacheReadMs":read_started.elapsed().as_millis(),"usbSession":false,"microphone":false,"playback":false})).unwrap()).unwrap();
     }
     fn cfg()->crate::doubao_tts::DoubaoTtsConfig{crate::doubao_tts::DoubaoTtsConfig::new("test-secret","speaker","",1.0,"")}
-    #[test]fn cache_keys_follow_text_voice_rate_model_but_never_credentials(){let a=cfg();let k=key(&a,"公开资讯");let mut b=a.clone();b.api_key="other".into();assert_eq!(k,key(&b,"公开资讯"));b.speed=1.1;assert_ne!(k,key(&b,"公开资讯"));b=a.clone();b.speaker="different".into();assert_ne!(k,key(&b,"公开资讯"));b=a.clone();b.model="new-model".into();assert_ne!(k,key(&b,"公开资讯"));assert_ne!(k,key(&a,"另一条"));}
-    #[test]fn pcm_is_atomic_bounded_and_corruption_never_plays(){let temp=tempfile::tempdir().unwrap();let k=key(&cfg(),"资讯");let pcm=vec![0,0,1,0];store_at(temp.path(),&k,&pcm).unwrap();assert_eq!(load_at(temp.path(),&k),Some(pcm.clone()));assert!(store_at(temp.path(),&k,&[1]).is_err());assert_eq!(load_at(temp.path(),&k),Some(pcm));std::fs::write(temp.path().join(format!("{k}.pcm")),b"NEWSPCM1bad").unwrap();assert!(load_at(temp.path(),&k).is_none());}
+    // 豆包缓存键与旧 news voice_key 同源：v1 前缀格式不可变，否则存量磁盘缓存失效。
+    #[test]fn cache_keys_follow_text_voice_rate_model_but_never_credentials(){let a=crate::voice_chat_settings::doubao_voice_key(&cfg());assert!(a.starts_with("news-pcm16-v1|"));let k=key(&a,"公开资讯");let mut b=cfg();b.api_key="other".into();assert_eq!(k,key(&crate::voice_chat_settings::doubao_voice_key(&b),"公开资讯"));b.speed=1.1;assert_ne!(k,key(&crate::voice_chat_settings::doubao_voice_key(&b),"公开资讯"));b=cfg();b.speaker="different".into();assert_ne!(k,key(&crate::voice_chat_settings::doubao_voice_key(&b),"公开资讯"));b=cfg();b.model="new-model".into();assert_ne!(k,key(&crate::voice_chat_settings::doubao_voice_key(&b),"公开资讯"));assert_ne!(k,key(&a,"另一条"));}
+    #[test]fn pcm_is_atomic_bounded_and_corruption_never_plays(){let temp=tempfile::tempdir().unwrap();let k=key(&crate::voice_chat_settings::doubao_voice_key(&cfg()),"资讯");let pcm=vec![0,0,1,0];store_at(temp.path(),&k,&pcm).unwrap();assert_eq!(load_at(temp.path(),&k),Some(pcm.clone()));assert!(store_at(temp.path(),&k,&[1]).is_err());assert_eq!(load_at(temp.path(),&k),Some(pcm));std::fs::write(temp.path().join(format!("{k}.pcm")),b"NEWSPCM1bad").unwrap();assert!(load_at(temp.path(),&k).is_none());}
 }

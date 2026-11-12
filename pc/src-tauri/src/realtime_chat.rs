@@ -26,12 +26,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use crate::doubao_tts::{scale_pcm16, DoubaoTtsClient};
+use crate::asr_engine;
+use crate::doubao_tts::scale_pcm16;
 use crate::persona_llm::{self, ChatTurn, SentenceSplitter};
+use crate::speech::{SpeechRecognizer, StreamingSpeechEvent, TtsEngine};
 use crate::usb_serial::UsbSerialManager;
 use crate::voice_chat_settings;
 use crate::realtime_chat_log as diagnostics;
-use crate::volcengine_asr::{StreamingSpeechEvent, StreamingSpeechRecognizer};
 
 #[path = "realtime_barge.rs"]
 mod barge_policy;
@@ -71,6 +72,9 @@ const PREVIEW_MAX_SECONDS: u64 = 20;
 pub struct VoiceSpec {
     pub speaker: String,
     pub clone_speaker_id: String,
+    /// 形象级 TTS 服务商覆盖（"" = 跟随全局；doubao_tts / dashscope_tts / mimo_tts / custom_tts）。
+    #[serde(default)]
+    pub provider: String,
     pub speed: f32,
     pub volume: f32,
 }
@@ -636,10 +640,13 @@ pub fn start(app: &AppHandle, mut input: RealtimeChatStartInput) -> Result<Realt
     if !settings.llm_configured {
         return Err("对话大模型未配置，请在「API 配置」填写大模型 API Key".to_string());
     }
-    if !settings.tts_configured {
-        return Err("豆包 TTS 未配置，请在「API 配置」填写语音合成 API Key".to_string());
+    if !voice_chat_settings::speech_tts_key_ready(Some(&input.voice.provider))? {
+        let provider = voice_chat_settings::normalize_voice_provider(&input.voice.provider)
+            .unwrap_or_else(|| settings.tts_provider.clone());
+        let label = voice_chat_settings::speech_preset(&provider).map(|p| p.label).unwrap_or("所选服务商");
+        return Err(format!("{label}语音合成未配置，请在「API 配置」填写{label}语音的 API Key"));
     }
-    if !crate::volcengine_asr::settings_status()?.configured {
+    if !voice_chat_settings::speech_asr_key_ready()? {
         return Err("语音识别未配置，请先在 API 配置填写 ASR Key".into());
     }
     let usb = app.state::<UsbSerialManager>().inner().clone();
@@ -1091,15 +1098,22 @@ async fn run_session(
     crate::smart_home::prepare_agent_capabilities();
 
     let llm_cfg = voice_chat_settings::llm_config();
-    let tts_cfg = voice_chat_settings::tts_config(&voice.speaker, &voice.clone_speaker_id, voice.speed());
-    let (llm_cfg, tts_cfg) = match (llm_cfg, tts_cfg) {
-        (Ok(l), Ok(t)) => (l, t),
-        (Err(error), _) | (_, Err(error)) => {
+    let mut tts: Box<dyn TtsEngine> = match voice_chat_settings::tts_engine(
+        Some(&voice.provider), &voice.speaker, &voice.clone_speaker_id, voice.speed(),
+    ) {
+        Ok(tts) => tts,
+        Err(error) => {
             finish(&app, &usb, &session, "config", &error).await;
             return;
         }
     };
-    let mut tts = DoubaoTtsClient::new(tts_cfg);
+    let llm_cfg = match llm_cfg {
+        Ok(llm) => llm,
+        Err(error) => {
+            finish(&app, &usb, &session, "config", &error).await;
+            return;
+        }
+    };
     let player = spawn_player(usb.clone(), board.clone(), session.clone());
     let duplex = session.duplex.load(Ordering::SeqCst);
     let mut vad = Vad::new();
@@ -1115,7 +1129,7 @@ async fn run_session(
     let greeting = input.greeting.trim().to_string();
     if !greeting.is_empty() {
         let mut greeting_pcm = Vec::new();
-        if let Err(error) = tts.synthesize(&greeting, |pcm| greeting_pcm.extend_from_slice(pcm)).await {
+        if let Err(error) = tts.synthesize(&greeting, &mut |pcm| greeting_pcm.extend_from_slice(pcm)).await {
             finish(&app, &usb, &session, "tts", &error).await;
             return;
         }
@@ -1145,7 +1159,7 @@ async fn run_session(
     publish(&app, &session, |s| s.state = "listening".into());
     hud(&usb, &board, &session.id, "listening", &name, "");
 
-    let mut recognizer: Option<StreamingSpeechRecognizer> = None;
+    let mut recognizer: Option<Box<dyn SpeechRecognizer>> = None;
     let mut capture_stats = AsrCaptureStats::default();
     // Each mailbox belongs to exactly one recognizer generation. Dropping a
     // failed round drops its mailbox; old worker callbacks never target a new one.
@@ -1320,7 +1334,7 @@ async fn run_session(
                             user_caption(&usb, &board, &session.id, &name, "", false);
                             last_activity = Instant::now();
                             let (tx, rx_events) = mpsc::unbounded_channel();
-                            match StreamingSpeechRecognizer::start(move |event| { let _ = tx.send(event); }) {
+                            match asr_engine::create(move |event| { let _ = tx.send(event); }) {
                                 Ok(rec) => {
                                     asr_generation = rec.generation();
                                     capture_stats = AsrCaptureStats::default();
@@ -1461,7 +1475,7 @@ async fn run_session(
 /// The same recognizer is then handed to the conversation loop, preserving the
 /// first syllables without replaying PCM or opening a second cloud request.
 struct VerifiedSpeech {
-    recognizer: StreamingSpeechRecognizer,
+    recognizer: Box<dyn SpeechRecognizer>,
     events: mpsc::UnboundedReceiver<StreamingSpeechEvent>,
     stats: AsrCaptureStats,
     text: String,
@@ -1484,7 +1498,7 @@ fn has_barge_in_text(text: &str) -> bool {
 
 fn start_barge_probe(frames: Vec<Vec<u8>>) -> Result<VerifiedSpeech, String> {
     let (tx, events) = mpsc::unbounded_channel();
-    let recognizer = StreamingSpeechRecognizer::start(move |event| { let _ = tx.send(event); })?;
+    let recognizer = asr_engine::create(move |event| { let _ = tx.send(event); })?;
     let mut stats = AsrCaptureStats::default();
     for frame in frames {
         recognizer.push_pcm(&frame)?;
@@ -1679,22 +1693,23 @@ fn queue_persona_update(session: &Session, input: RealtimeChatStartInput) -> Res
     Ok(true)
 }
 
-async fn apply_pending_persona(session: &Session, current: &mut RealtimeChatStartInput, tts: &mut DoubaoTtsClient) -> Result<bool, String> {
+async fn apply_pending_persona(session: &Session, current: &mut RealtimeChatStartInput, tts: &mut Box<dyn TtsEngine>) -> Result<bool, String> {
     apply_pending_persona_with(session, current, tts, |voice| {
-        voice_chat_settings::tts_config(&voice.speaker, &voice.clone_speaker_id, voice.speed())
+        voice_chat_settings::tts_engine(Some(&voice.provider), &voice.speaker, &voice.clone_speaker_id, voice.speed())
     }).await
 }
 
-async fn apply_pending_persona_with(session: &Session, current: &mut RealtimeChatStartInput, tts: &mut DoubaoTtsClient,
-    config_for: impl FnOnce(&VoiceSpec) -> Result<crate::doubao_tts::DoubaoTtsConfig, String>) -> Result<bool, String> {
+async fn apply_pending_persona_with(session: &Session, current: &mut RealtimeChatStartInput, tts: &mut Box<dyn TtsEngine>,
+    engine_for: impl FnOnce(&VoiceSpec) -> Result<Box<dyn TtsEngine>, String>) -> Result<bool, String> {
     // Separate from the PCM queue: playback cleanup must never discard a saved update.
     let pending = session.pending_persona.lock().map_err(|_| "实时对话配置锁异常")?.take();
     let Some(next) = pending else { return Ok(false) };
-    if next.voice.speaker != current.voice.speaker || next.voice.clone_speaker_id != current.voice.clone_speaker_id
+    if next.voice.provider != current.voice.provider || next.voice.speaker != current.voice.speaker
+        || next.voice.clone_speaker_id != current.voice.clone_speaker_id
         || next.voice.speed() != current.voice.speed() {
-        let cfg = config_for(&next.voice)?;
+        let engine = engine_for(&next.voice)?;
         tts.reset().await;
-        *tts = DoubaoTtsClient::new(cfg);
+        *tts = engine;
     }
     current.display_name = next.display_name;
     current.system_prompt = next.system_prompt;
@@ -1851,7 +1866,7 @@ async fn answer_turn(
     history: &mut Vec<ChatTurn>,
     desktop_conversation: &mut crate::desktop_agent::Conversation,
     user_text: &str,
-    tts: &mut DoubaoTtsClient,
+    tts: &mut dyn TtsEngine,
     player: &Player,
     name: &str,
 ) -> Result<(), String> {
@@ -1981,15 +1996,15 @@ async fn answer_turn(
     Ok(())
 }
 
-async fn speak_one(tts: &mut DoubaoTtsClient, player: &Player, text: &str) -> Result<(), String> {
+async fn speak_one(tts: &mut dyn TtsEngine, player: &Player, text: &str) -> Result<(), String> {
     speak_one_logged(tts, player, text, "").await
 }
 
-async fn speak_one_logged(tts: &mut DoubaoTtsClient, player: &Player, text: &str, session_id: &str) -> Result<(), String> {
+async fn speak_one_logged(tts: &mut dyn TtsEngine, player: &Player, text: &str, session_id: &str) -> Result<(), String> {
     let sender = player.clone();
     let started = Instant::now();
     let mut first_pcm = true;
-    tts.synthesize(text, |pcm| {
+    tts.synthesize(text, &mut |pcm| {
         if first_pcm && !pcm.is_empty() {
             let _ = sender.send(PlayerCmd::Subtitle(text.to_string()));
             diagnostics::record(session_id, "tts_first_pcm", json!({"elapsedMs":started.elapsed().as_millis()}));
@@ -2092,10 +2107,11 @@ pub async fn preview(input: PersonaVoicePreviewInput) -> Result<(), String> {
     if text.is_empty() {
         return Err("没有可试听的文本".to_string());
     }
-    let cfg = voice_chat_settings::tts_config(&input.voice.speaker, &input.voice.clone_speaker_id, input.voice.speed())?;
-    let mut client = DoubaoTtsClient::new(cfg);
+    let mut client = voice_chat_settings::tts_engine(
+        Some(&input.voice.provider), &input.voice.speaker, &input.voice.clone_speaker_id, input.voice.speed(),
+    )?;
     let mut pcm: Vec<u8> = Vec::new();
-    client.synthesize(&text, |chunk| pcm.extend_from_slice(chunk)).await?;
+    client.synthesize(&text, &mut |chunk| pcm.extend_from_slice(chunk)).await?;
     client.reset().await;
     scale_pcm16(&mut pcm, input.voice.volume());
     tauri::async_runtime::spawn_blocking(move || {
@@ -2151,6 +2167,8 @@ pub async fn clear_voice_chat_secret(which: String) -> Result<voice_chat_setting
 
 #[cfg(test)]
 mod tests {
+    use crate::doubao_tts::DoubaoTtsClient;
+    use crate::volcengine_asr::StreamingSpeechRecognizer;
     include!("realtime_aec_ingress_tests.rs");
     #[test]
     fn interruption_keeps_displayed_question_without_claiming_it_was_completed() {
@@ -2445,7 +2463,7 @@ mod tests {
         }
         let mut stats = AsrCaptureStats::default();
         for frame in frames { recognizer.push_pcm(&frame).unwrap(); stats.observe(&frame); }
-        (VerifiedSpeech { recognizer, events, stats, text: String::new(), reply_completed: false, terminal: false },
+        (VerifiedSpeech { recognizer: Box::new(recognizer) as Box<dyn SpeechRecognizer>, events, stats, text: String::new(), reply_completed: false, terminal: false },
             (sink, if keep_events_open { Some(tx) } else { None }))
     }
 
@@ -2808,10 +2826,10 @@ mod tests {
             next.system_prompt = "latest prompt".into(); next.board_device_id.clear();
             assert!(queue_persona_update(&session, next).unwrap());
             session.input.try_send(Input::Pcm(vec![0; FRAME_BYTES], None)).unwrap(); drain_pending(&mut rx);
-            let mut tts = DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", "old", "", 1.0, ""));
+            let mut tts: Box<dyn TtsEngine> = Box::new(DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", "old", "", 1.0, "")));
             assert!(apply_pending_persona_with(&session, &mut current, &mut tts, |voice| {
                 assert_eq!(voice.speaker, "new-speaker"); assert_eq!(voice.speed, 1.2); assert_eq!(voice.volume, 0.8);
-                Ok(crate::doubao_tts::DoubaoTtsConfig::new("test", &voice.speaker, "", voice.speed(), ""))
+                Ok(Box::new(DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", &voice.speaker, "", voice.speed(), ""))))
             }).await.unwrap());
             assert_eq!(current.system_prompt, "latest prompt"); assert_eq!(current.display_name, "new");
             assert_eq!(current.board_device_id, "board"); assert_eq!(current.appearance_id, "pet-a");
@@ -2822,6 +2840,35 @@ mod tests {
             assert!(!apply_pending_persona_with(&session, &mut current, &mut tts, |_| panic!("no pending update")).await.unwrap());
             session.cancelled.store(true, Ordering::SeqCst);
             assert!(!queue_persona_update(&session, current).unwrap());
+        });
+    }
+
+    #[test]
+    fn persona_provider_swap_rebuilds_the_engine_and_voicespec_defaults_follow_global() {
+        // serde 兼容：旧前端的 start payload 没有 provider 字段时按跟随全局处理。
+        let spec: VoiceSpec = serde_json::from_value(json!({"speaker":"zh_female_peiqi_uranus_bigtts","speed":1.05,"volume":1.0})).unwrap();
+        assert_eq!(spec.provider, "");
+        let explicit: VoiceSpec = serde_json::from_value(json!({"speaker":"s","provider":"mimo_tts","speed":1.0,"volume":1.0})).unwrap();
+        assert_eq!(explicit.provider, "mimo_tts");
+
+        tauri::async_runtime::block_on(async {
+            let (tx, mut rx) = mpsc::channel(128);
+            let session = Session { id:"rtc-test".into(), board_device_id:"board".into(), transport:None, capture_stream:Mutex::new(None), audio_egress:Mutex::new(()), audio_requests:Arc::new(Mutex::new(Default::default())), cancelled:AtomicBool::new(false), duplex:AtomicBool::new(false),
+                capture_armed:AtomicBool::new(false), capture_ready:AtomicBool::new(false),
+                stop_notify:tokio::sync::Notify::new(), input:tx,
+                status:Mutex::new(RealtimeChatStatus { active:true, appearance_id:"pet-a".into(), ..Default::default() }),
+                completed_playback:Mutex::new(String::new()), pending_persona:Mutex::new(None), playback_volume:AtomicU32::new(1.0f32.to_bits()) };
+            let mut current = RealtimeChatStartInput { board_device_id:"board".into(), appearance_id:"pet-a".into(),
+                display_name:"n".into(), system_prompt:"p".into(), greeting:"".into(), voice:VoiceSpec::default() };
+            let mut next = current.clone(); next.voice.provider = "dashscope_tts".into();
+            queue_persona_update(&session, next).unwrap();
+            // 只有 provider 变化也必须重建引擎，不能沿用上一个服务商的连接。
+            let mut tts: Box<dyn TtsEngine> = Box::new(DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", "s", "", 1.0, "")));
+            assert!(apply_pending_persona_with(&session, &mut current, &mut tts, |voice| {
+                assert_eq!(voice.provider, "dashscope_tts");
+                Ok(Box::new(DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", &voice.speaker, "", voice.speed(), ""))))
+            }).await.unwrap());
+            assert_eq!(current.voice.provider, "dashscope_tts");
         });
     }
 

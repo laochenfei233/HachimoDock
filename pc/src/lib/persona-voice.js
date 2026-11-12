@@ -1,19 +1,31 @@
 /**
- * [Input] Appearance name/description, stored `persona-voice.json` documents, and Doubao Seed TTS speaker ids.
+ * [Input] Appearance name/description, stored `persona-voice.json` documents (schema v2 with a
+ *         per-appearance TTS provider), Doubao Seed TTS speaker ids, and speech provider presets.
  * [Output] Normalized per-appearance persona + voice model (defaults, factory Terrier persona, templates,
- *          validation, realtime system prompt assembly, human labels) plus the "persona setup pending" marker
- *          that forces the persona step right after a new appearance is created, and saved-persona events.
+ *          validation, realtime system prompt assembly, human labels, per-provider voice options) plus the
+ *          "persona setup pending" marker that forces the persona step right after a new appearance is
+ *          created, and saved-persona events.
  * [Pos] lib node in pc/src/lib — single source of truth for the 人设与声音 data shape.
  * [Sync] Update this header, `pc/src/.folder.md`, and `pc/docs/realtime-chat.md`.
  */
 
 import voiceCatalog from "./tts-voices.json" with { type: "json" };
+import { TTS_PROVIDER_PRESETS } from "./api-configuration.js";
 
 export const PERSONA_VOICE_FILE = "persona-voice.json";
-export const PERSONA_VOICE_SCHEMA_VERSION = 1;
+export const PERSONA_VOICE_SCHEMA_VERSION = 2;
 
-/** 首期只接豆包 Seed TTS 2.0；`voice.provider` 预留给以后的提供方。 */
+/** 豆包 Seed TTS 的形象级 provider 标识；`""` 表示跟随全局服务商。 */
 export const TTS_PROVIDER_DOUBAO = "doubao_tts";
+
+/** 形象级合成服务商选项：""=跟随全局；其余对应全局服务商（Rust VoiceSpec.provider 同名）。 */
+export const TTS_VOICE_PROVIDERS = Object.freeze([
+  { id: "", label: "跟随全局" },
+  { id: "doubao_tts", label: "豆包" },
+  { id: "dashscope_tts", label: "通义千问" },
+  { id: "mimo_tts", label: "MiMo" },
+  { id: "custom_tts", label: "自定义" },
+]);
 
 export const PERSONA_LANGUAGE_OPTIONS = Object.freeze([
   { id: "zh", label: "中文" },
@@ -37,6 +49,26 @@ export function speakerOptionsFor(currentSpeaker = "", query = "") {
     return [{ ...current, language: "当前音色" }, ...matches];
   }
   return matches;
+}
+
+/**
+ * 音色选项按已解析的合成服务商返回：豆包（或跟随全局的豆包）走官方目录；
+ * dashscope 用预设音色（保留不在预设里的当前值）；mimo/custom 无预设，由 UI 自由填写。
+ */
+export function voiceOptionsFor(providerId, currentVoice = "", query = "") {
+  const id = text(providerId);
+  if (!id || id === TTS_PROVIDER_DOUBAO) return speakerOptionsFor(currentVoice, query);
+  const preset = TTS_PROVIDER_PRESETS.find((item) => item.id === id.replace(/_tts$/, ""));
+  const voices = preset?.voices || [];
+  const needle = query.trim().toLocaleLowerCase();
+  const current = text(currentVoice);
+  const options = voices
+    .filter((voice) => !needle || voice.toLocaleLowerCase().includes(needle))
+    .map((voice) => ({ id: voice, label: voice }));
+  if (current && !options.some((option) => option.id === current)) {
+    return [{ id: current, label: current }, ...options];
+  }
+  return options;
 }
 
 export const VOICE_SPEED_RANGE = Object.freeze({ min: 0.5, max: 2.0, step: 0.05, fallback: 1.0 });
@@ -134,7 +166,7 @@ export function createDefaultPersonaVoice({ name = "", description = "", isBuilt
       source: "default",
     },
     voice: {
-      provider: TTS_PROVIDER_DOUBAO,
+      provider: "",
       speaker: DEFAULT_SPEAKER_ID,
       clone_speaker_id: "",
       speed: VOICE_SPEED_RANGE.fallback,
@@ -166,8 +198,14 @@ export function normalizePersonaVoice(raw, { name = "", description = "", isBuil
     source: text(rawPersona.source) || (source ? "user" : defaults.persona.source),
     schema_version: PERSONA_VOICE_SCHEMA_VERSION,
   };
+  // schema v2 才允许显式的 voice.provider；v1（或无版本号的存量文档）一律回落默认（普通形象=跟随全局）——
+  // 旧值是强制写入的 doubao_tts，不能当作用户的显式选择。v2 未知值同样规整为 ""。
+  const documentVersion = Number(source?.schema_version ?? rawPersona.schema_version ?? 1);
+  const legacyDocument = documentVersion !== PERSONA_VOICE_SCHEMA_VERSION;
+  const requestedProvider = text(rawVoice.provider);
   const voice = {
-    provider: TTS_PROVIDER_DOUBAO,
+    provider: !legacyDocument && TTS_VOICE_PROVIDERS.some((option) => option.id === requestedProvider)
+      ? requestedProvider : defaults.voice.provider,
     speaker: voiceCatalog.legacySpeakerIds.includes(text(rawVoice.speaker))
       ? voiceCatalog.defaultSpeaker : text(rawVoice.speaker) || defaults.voice.speaker,
     clone_speaker_id: text(rawVoice.clone_speaker_id),
@@ -277,6 +315,7 @@ export function listPersonaSetupPending() {
 export function voiceSpecFor(personaVoice) {
   const voice = personaVoice?.voice || {};
   return {
+    provider: text(voice.provider),
     speaker: text(voice.speaker) || DEFAULT_SPEAKER_ID,
     cloneSpeakerId: text(voice.clone_speaker_id),
     speed: clampNumber(voice.speed, VOICE_SPEED_RANGE),
