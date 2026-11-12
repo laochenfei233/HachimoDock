@@ -50,7 +50,7 @@ export const FIXED_AGENT_OPTIONS = [
   {
     id: "zcode",
     label: "ZCode",
-    detail: "ZCode 桌面渠道:状态跟随与当前可见输入框语音",
+    detail: "ZCode 桌面渠道：状态跟随与当前可见输入框语音",
   },
 ];
 

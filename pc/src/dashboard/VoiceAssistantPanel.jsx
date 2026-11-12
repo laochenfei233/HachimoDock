@@ -507,7 +507,7 @@ export default function VoiceAssistantPanel({
             />
           </summary>
           <div className="voice-panel__advanced-body voice-panel__diagnostics-body">
-          {desktopPlatform === "macos" && ["codex", "claude-code", "workbuddy", "deepseek-harness"].includes(state.selectedAgentId) &&
+          {desktopPlatform === "macos" && ["codex", "claude-code", "workbuddy", "deepseek-harness", "zcode"].includes(state.selectedAgentId) &&
             <VoiceComposerCheck agentId={state.selectedAgentId}
               disabled={state.mockInjectPending || ["listening", "partial", "finalizing", "draft_ready"].includes(voicePhase)} />}
           <div className="voice-panel__mock voice-panel__compose">
