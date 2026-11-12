@@ -7819,8 +7819,8 @@ async fn usb_display_aod(
     let manager = usb_manager.inner().clone();
     let request = match operation.as_str() {
         "set" => usb_serial::DisplayAodRequest::Set {
-            timeout: timeout_minutes.unwrap_or(0),
-            items: items.unwrap_or_default(),
+            timeout: timeout_minutes.ok_or("display aod set requires timeoutMinutes")?,
+            items: items.ok_or("display aod set requires items")?,
         },
         "enter" => usb_serial::DisplayAodRequest::Enter,
         "query" => usb_serial::DisplayAodRequest::Query,

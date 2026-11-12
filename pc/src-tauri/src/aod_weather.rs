@@ -7,7 +7,9 @@ use crate::location_profile::Profile;
 use std::sync::{Mutex, OnceLock};
 
 const WEATHER_COMPONENT: &str = "hachimi-weather";
-const KICK_INTERVAL_SEC: i64 = 1800; // 到期踢一次后台定位/刷新;节流仍由 profile 控制
+// 到期踢一次后台定位/刷新;网络节流由 profile.refreshSec 与服务器缓存头控制,
+// 因此可以激进踢(首次数据在连接后约一个间隔即可达,而非等满 30 分钟)。
+const KICK_INTERVAL_SEC: i64 = 60;
 
 struct AodWeather {
     profile: Option<Profile>,
@@ -88,6 +90,8 @@ pub fn heartbeat_snapshot() -> Option<serde_json::Value> {
     if !fresh {
         return None;
     }
+    // 固件 cond 上限 31 字节(PET_P4_AOD_WEATHER_COND_MAX);超限整项会被丢弃,先截断。
+    let cond: String = cond.chars().take(10).collect();
     state.last_sent = Some((now, cond.clone(), temp_rounded));
     Some(serde_json::json!({"tempC": temp, "cond": cond}))
 }

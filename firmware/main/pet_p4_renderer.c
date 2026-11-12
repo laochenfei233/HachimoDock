@@ -7253,7 +7253,7 @@ static void render_aod_page(const pet_p4_view_model_t *view, unsigned long long 
   for (unsigned k = 0; k < item_count && slot_count < 2; k++) {
     pet_p4_aod_item_t item = pet_p4_display_aod_item(k);
     char *text = slot_text[slot_count];
-    text[0] = ' ';
+    text[0] = '\0';
     if (item == PET_P4_AOD_ITEM_TIME && time_ready) {
       snprintf(text, sizeof(slot_text[0]), "%02d:%02d", tick.hour, tick.minute);
     } else if (item == PET_P4_AOD_ITEM_DATE && time_ready) {

@@ -38,7 +38,9 @@ def test_input_touch_and_main_loop_funnels():
     touch_source = source("main/pet_p4_touch.c")
     main_source = source("main/pet_p4_main.c")
     assert "pet_p4_display_aod_consume_input(state)" in input_source
-    assert "pet_p4_display_aod_consume_input(state)" in touch_source
+    # 触摸侧带笔画结束标记:唤醒宽限吞同一笔画的 UP/合成手势,不泄漏进恢复页。
+    assert "pet_p4_display_aod_consume_touch(state, aod_stroke_end)" in touch_source
+    assert "PET_P4_POINTER_UP" in touch_source and "PET_P4_POINTER_CANCEL" in touch_source
     # 息屏激活时输入在审批处理之前即被吞掉:唤醒优先,事件不进入绑定分发。
     assert (
         input_source.index("pet_p4_display_aod_consume_input")
@@ -89,6 +91,107 @@ def test_auto_enter_gates_and_factory_defaults():
     assert 'prev_page[0] ? prev_page : "main"' in aod
     assert "cfg_timeout_min = 5" in aod
     assert "PET_P4_AOD_ITEM_TIME, PET_P4_AOD_ITEM_DATE" in aod
+
+
+def test_enter_bypasses_auto_gates_and_external_switch_keeps_new_page():
+    aod = source("main/pet_p4_display_aod.c")
+    # PC enter 仅排除 touch_test 诊断页;对话/传输/音频门控只属于自动进入。
+    request_enter = function(aod, "pet_p4_display_aod_request_enter")
+    assert 'strcmp(state->screen_page, "touch_test")' in request_enter
+    assert "pet_p4_conversation_active" not in request_enter
+    assert "pet_p4_audio_playback_active" not in request_enter
+    # enter 由 reply 的 operation 分支调用;协议层只挂 reply 入口。
+    reply_fn = function(aod, "pet_p4_display_aod_reply")
+    assert "pet_p4_display_aod_request_enter" in reply_fn
+    # 外部改页(PC screen-page/媒体自动切 app):保留新页,只退出调暗态。
+    process = function(aod, "pet_p4_display_aod_process")
+    assert "exit_aod" not in process
+    assert "pet_p4_lcd_set_brightness(100)" in process
+
+
+WAKE_HARNESS = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+typedef struct {
+  char screen_page[16];
+} pet_p4_runtime_state_t;
+#define PET_P4_AOD_WAKE_GRACE_MS 300ULL
+#define PET_P4_AOD_BRIGHTNESS_PERCENT 15u
+static unsigned long long fake_now;
+static unsigned long long esp_timer_get_time(void) { return fake_now * 1000ULL; }
+static int brightness_calls;
+static int pet_p4_lcd_set_brightness(unsigned percent) {
+  (void)percent;brightness_calls++;return 0;
+}
+static bool aod_active;
+static char prev_page[16];
+static unsigned long long last_input_ms;
+static unsigned long long wake_grace_until_ms;
+static bool wake_until_pointer_up;
+"""
+
+
+def test_wake_grace_swallows_same_interaction_events(tmp_path):
+    text = source("main/pet_p4_display_aod.c")
+    code = (
+        WAKE_HARNESS
+        + function(text, "enter_aod")
+        + function(text, "exit_aod")
+        + function(text, "consume_wake")
+        + function(text, "pet_p4_display_aod_consume_input")
+        + function(text, "pet_p4_display_aod_consume_touch")
+        + function(text, "pet_p4_display_aod_request_enter")
+        + r"""
+int main(void) {
+  pet_p4_runtime_state_t st;
+  snprintf(st.screen_page, sizeof(st.screen_page), "main");
+  /* 空闲常态:非激活且无宽限,事件照常分发。 */
+  fake_now = 0;
+  assert(!pet_p4_display_aod_consume_input(&st));
+  assert(!pet_p4_display_aod_consume_touch(&st, false));
+  /* PC 请求进入,第一条物理输入唤醒;宽限窗(300ms)内后续事件继续吞。 */
+  assert(pet_p4_display_aod_request_enter(&st, fake_now));
+  assert(!strcmp(st.screen_page, "aod"));
+  assert(pet_p4_display_aod_consume_input(&st));
+  assert(!strcmp(st.screen_page, "main"));
+  fake_now = 100;
+  assert(pet_p4_display_aod_consume_input(&st));
+  fake_now = 400;
+  assert(!pet_p4_display_aod_consume_input(&st));
+  /* 触摸笔画:DOWN 唤醒 → MOVE/UP 全吞 → UP 结束笔画 → 残留合成手势在
+   * 宽限内仍吞,宽限过后恢复正常。 */
+  fake_now = 1000;
+  assert(!pet_p4_display_aod_consume_touch(&st, false));
+  assert(pet_p4_display_aod_request_enter(&st, fake_now));
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  assert(!strcmp(st.screen_page, "main"));
+  fake_now = 1010;
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  fake_now = 1020;
+  assert(pet_p4_display_aod_consume_touch(&st, true));
+  fake_now = 1100;
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  fake_now = 1400;
+  assert(!pet_p4_display_aod_consume_touch(&st, false));
+  /* 笔画未结束时的按键事件也不落入恢复页;UP 之后恢复。 */
+  fake_now = 2000;
+  assert(pet_p4_display_aod_request_enter(&st, fake_now));
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  assert(pet_p4_display_aod_consume_input(&st));
+  fake_now = 2010;
+  assert(pet_p4_display_aod_consume_touch(&st, true));
+  /* 笔画结束后宽限窗仍有效(吞残留事件),窗口外恢复分发。 */
+  fake_now = 2100;
+  assert(pet_p4_display_aod_consume_input(&st));
+  fake_now = 2400;
+  assert(!pet_p4_display_aod_consume_input(&st));
+  return 0;
+}
+"""
+    )
+    run_host_test(tmp_path, "aod_wake_grace", code)
 
 
 APPLY_HARNESS = r"""

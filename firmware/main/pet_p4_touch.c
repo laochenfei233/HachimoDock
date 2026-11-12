@@ -509,8 +509,11 @@ void pet_p4_touch_process(
   touch_sample_t sample;
   if (!g_touch_queue) return;
   while (xQueueReceive(g_touch_queue, &sample, 0) == pdTRUE) {
-    /* 息屏灵动岛激活时,触摸只唤醒屏幕;样本不再进入页面手势处理。 */
-    if (pet_p4_display_aod_consume_input(state)) continue;
+    /* 息屏灵动岛激活时,触摸只唤醒屏幕;同一笔画的后续样本(含合成手势)
+     * 在唤醒宽限内继续吞掉,不进入页面手势处理。 */
+    bool aod_stroke_end = sample.has_pointer
+      && (sample.pointer.kind == PET_P4_POINTER_UP || sample.pointer.kind == PET_P4_POINTER_CANCEL);
+    if (pet_p4_display_aod_consume_touch(state, aod_stroke_end)) continue;
     bool test = state && !pet_p4_conversation_active(state) && !strcmp(state->screen_page, "touch_test");
     bool component = state && !pet_p4_conversation_active(state) && !strcmp(state->screen_page,"app")
       && pet_p4_miniapp_slicing_active();

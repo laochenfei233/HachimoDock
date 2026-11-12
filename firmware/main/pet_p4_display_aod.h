@@ -11,6 +11,8 @@
 #define PET_P4_AOD_TIMEOUT_MAX_MIN 1440u
 #define PET_P4_AOD_WEATHER_COND_MAX 32
 #define PET_P4_AOD_BRIGHTNESS_PERCENT 15u
+/* 唤醒宽限窗:吞掉同一物理交互的后续队列事件(触摸合成手势/旋钮多格)。 */
+#define PET_P4_AOD_WAKE_GRACE_MS 300ULL
 
 typedef enum {
   PET_P4_AOD_ITEM_NONE = 0,
@@ -33,8 +35,12 @@ unsigned pet_p4_display_aod_timeout_min(void);
 unsigned pet_p4_display_aod_item_count(void);
 pet_p4_aod_item_t pet_p4_display_aod_item(unsigned index);
 /* 输入汇聚点(input/touch 队列循环)调用:记录活跃时间;AOD 激活时吞掉该
- * 事件并唤醒,返回 true=事件已消费,调用方不得再做其他分发。 */
+ * 事件并唤醒,返回 true=事件已消费,调用方不得再做其他分发。唤醒后的宽限
+ * 窗口内(含同一触摸笔画到抬起为止)继续吞事件,避免唤醒触摸泄漏成恢复页
+ * 的点击/滑动。 */
 bool pet_p4_display_aod_consume_input(pet_p4_runtime_state_t *state);
+/* touch 侧专用:stroke_end 表示该样本是指针抬起/取消(笔画结束)。 */
+bool pet_p4_display_aod_consume_touch(pet_p4_runtime_state_t *state, bool stroke_end);
 /* 主循环(持 state 锁内、input_process 之后)调用:自动进入门控在此。 */
 void pet_p4_display_aod_process(pet_p4_runtime_state_t *state, unsigned long long now_ms);
 /* PC 显式息屏:绕过自动门控,仅 touch_test 除外。返回是否进入。 */

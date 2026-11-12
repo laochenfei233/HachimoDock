@@ -117,20 +117,48 @@ static void exit_aod(pet_p4_runtime_state_t *state) {
   pet_p4_lcd_set_brightness(100);
 }
 
+/* 唤醒宽限:一次物理交互由多条队列事件构成(触摸 DOWN..UP+合成手势、旋钮
+ * 多格、摇杆 REPEAT)。唤醒只消费第一条,其余事件在宽限窗内继续吞掉;触摸
+ * 笔画则吞到抬起/取消为止,避免"点一下唤醒"变成恢复页的一次点击。 */
+static unsigned long long wake_grace_until_ms;
+static bool wake_until_pointer_up;
+
+static bool consume_wake(pet_p4_runtime_state_t *state, unsigned long long now,
+    bool wake_until_pointer_up_next) {
+  last_input_ms = now;
+  if (aod_active) {
+    if (state) exit_aod(state);
+    wake_until_pointer_up = wake_until_pointer_up_next;
+    wake_grace_until_ms = now + PET_P4_AOD_WAKE_GRACE_MS;
+    return true;
+  }
+  if (wake_until_pointer_up || now < wake_grace_until_ms) return true;
+  return false;
+}
+
 bool pet_p4_display_aod_consume_input(pet_p4_runtime_state_t *state) {
-  last_input_ms = (unsigned long long) (esp_timer_get_time() / 1000ULL);
-  if (!aod_active) return false;
-  /* Any physical input only wakes the screen; never leaks into bindings. */
-  if (state) exit_aod(state);
-  return true;
+  unsigned long long now = (unsigned long long) (esp_timer_get_time() / 1000ULL);
+  /* 按键/摇杆事件不结束触摸笔画吞咽;唤醒本身改由按键发起时结束笔画模式。 */
+  return consume_wake(state, now, false);
+}
+
+bool pet_p4_display_aod_consume_touch(pet_p4_runtime_state_t *state, bool stroke_end) {
+  unsigned long long now = (unsigned long long) (esp_timer_get_time() / 1000ULL);
+  bool swallow = consume_wake(state, now, aod_active);
+  if (swallow && wake_until_pointer_up && stroke_end) wake_until_pointer_up = false;
+  return swallow;
 }
 
 void pet_p4_display_aod_process(pet_p4_runtime_state_t *state, unsigned long long now_ms) {
   if (!state) return;
   if (aod_active) {
-    /* The page may have been switched underneath (PC screen-page command);
-     * never let the dim state outlive the AOD page. */
-    if (strcmp(state->screen_page, "aod") != 0) exit_aod(state);
+    if (strcmp(state->screen_page, "aod") != 0) {
+      /* 页面被外部切换(PC screen-page、媒体自动切 app):保留新页,
+       * 只退出调暗态;回到 prev_page 会覆盖外部选页。 */
+      aod_active = false;
+      prev_page[0] = '\0';
+      pet_p4_lcd_set_brightness(100);
+    }
     return;
   }
   if (!cfg_timeout_min) return;
