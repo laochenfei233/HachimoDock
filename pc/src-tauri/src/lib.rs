@@ -7817,16 +7817,20 @@ async fn usb_display_aod(
     items: Option<Vec<String>>,
 ) -> Result<serde_json::Value, String> {
     let manager = usb_manager.inner().clone();
-    let timeout = match operation.as_str() {
-        "set" => Some(timeout_minutes.unwrap_or(0)),
-        "enter" => None,
+    let request = match operation.as_str() {
+        "set" => usb_serial::DisplayAodRequest::Set {
+            timeout: timeout_minutes.unwrap_or(0),
+            items: items.unwrap_or_default(),
+        },
+        "enter" => usb_serial::DisplayAodRequest::Enter,
+        "query" => usb_serial::DisplayAodRequest::Query,
         _ => return Err("invalid display aod operation".into()),
     };
-    if timeout.is_none() && items.is_some() {
+    if !matches!(request, usb_serial::DisplayAodRequest::Set { .. }) && items.is_some() {
         return Err("invalid display aod operation".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        manager.display_aod(&expected_board_device_id, timeout, items)
+        manager.display_aod(&expected_board_device_id, request)
     })
     .await
     .map_err(|_| "display_aod_result_unknown_refresh_required: worker failed".to_string())?

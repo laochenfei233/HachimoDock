@@ -195,6 +195,21 @@ fn check_connection(
     .map_err(str::to_owned)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Query,
+    Enter,
+    Set,
+}
+impl Mode {
+    fn fields(self) -> usize {
+        match self {
+            Mode::Set => 5,
+            Mode::Query | Mode::Enter => 3,
+        }
+    }
+}
+
 /// Rechecked while send_inner owns both the inbound lease and connection lock.
 /// Generic/unbound sends cannot obtain the trusted AOD control path.
 pub(super) fn validate_write(
@@ -215,8 +230,9 @@ pub(super) fn validate_write(
     }
     let object = payload.as_object().ok_or("invalid display aod request")?;
     let set = match payload["operation"].as_str() {
-        Some("enter") => false,
-        Some("set") => true,
+        Some("query") => Mode::Query,
+        Some("enter") => Mode::Enter,
+        Some("set") => Mode::Set,
         _ => return Err("invalid display aod operation".into()),
     };
     let timeout = payload["timeoutMinutes"].as_u64();
@@ -230,13 +246,14 @@ pub(super) fn validate_write(
             .is_ok()
         })
     });
-    if object.len() != if set { 5 } else { 3 }
+    if object.len() != set.fields()
         || payload["expectedBoardDeviceId"].as_str() != Some(board)
         || !payload["requestId"]
             .as_str()
             .is_some_and(|v| !v.is_empty() && v.len() <= 96 && !v.chars().any(char::is_control))
-        || (set && (!timeout.is_some_and(|v| v <= 1440) || !items_ok))
-        || (!set && (object.contains_key("timeoutMinutes") || object.contains_key("items")))
+        || (set == Mode::Set && (!timeout.is_some_and(|v| v <= 1440) || !items_ok))
+        || (set != Mode::Set
+            && (object.contains_key("timeoutMinutes") || object.contains_key("items")))
     {
         return Err("invalid display aod request".into());
     }
@@ -280,23 +297,33 @@ fn validate_response(
     .map_err(str::to_owned)
 }
 
+/// AOD 请求:读当前配置、立即息屏、或写入配置。
+#[derive(Clone, Debug)]
+pub enum DisplayAodRequest {
+    Query,
+    Enter,
+    Set { timeout: u16, items: Vec<String> },
+}
+
 impl UsbSerialManager {
-    /// timeout 为 Some 时下发 set 配置(None 时下发 enter 立即息屏)。
     pub fn display_aod(
         &self,
         board: &str,
-        timeout: Option<u16>,
-        items: Option<Vec<String>>,
+        request: DisplayAodRequest,
     ) -> Result<serde_json::Value, String> {
-        self.display_aod_timeout(board, timeout, items, P4_DEVICE_RESPONSE_TIMEOUT)
+        self.display_aod_timeout(board, request, P4_DEVICE_RESPONSE_TIMEOUT)
     }
     fn display_aod_timeout(
         &self,
         board: &str,
-        timeout: Option<u16>,
-        items: Option<Vec<String>>,
+        request: DisplayAodRequest,
         timeout_duration: Duration,
     ) -> Result<serde_json::Value, String> {
+        let (mode, timeout, items) = match request {
+            DisplayAodRequest::Query => (Mode::Query, None, None),
+            DisplayAodRequest::Enter => (Mode::Enter, None, None),
+            DisplayAodRequest::Set { timeout, items } => (Mode::Set, Some(timeout), Some(items)),
+        };
         policy::board(board).map_err(str::to_owned)?;
         policy::timeout(timeout).map_err(str::to_owned)?;
         if timeout.is_some() {
@@ -315,7 +342,11 @@ impl UsbSerialManager {
             (connection.connection_id, connection.cancel_reader.clone())
         };
         let request = format!("aod-{}", uuid::Uuid::new_v4());
-        let mut payload = serde_json::json!({"operation":if timeout.is_some(){"set"}else{"enter"},
+        let mut payload = serde_json::json!({"operation":match mode {
+                Mode::Set => "set",
+                Mode::Enter => "enter",
+                Mode::Query => "query",
+            },
             "requestId":request,"expectedBoardDeviceId":board});
         if let Some(timeout) = timeout {
             payload["timeoutMinutes"] = timeout.into();
@@ -452,13 +483,15 @@ mod tests {
         (manager, trace)
     }
     #[test]
-    fn memory_set_and_enter_are_bound_one_shot_with_echo_check() {
+    fn memory_set_enter_and_query_are_bound_one_shot_with_echo_check() {
         let (manager, trace) = manager(Mode::Reply);
         let result = manager
             .display_aod_timeout(
                 "aod-board",
-                Some(10),
-                Some(vec!["time".into(), "weather".into()]),
+                DisplayAodRequest::Set {
+                    timeout: 10,
+                    items: vec!["time".into(), "weather".into()],
+                },
                 Duration::from_millis(20),
             )
             .unwrap();
@@ -472,9 +505,21 @@ mod tests {
             assert_eq!(trace[0]["payload"]["timeoutMinutes"], 10);
         }
         let result = manager
-            .display_aod_timeout("aod-board", None, None, Duration::from_millis(20))
+            .display_aod_timeout(
+                "aod-board",
+                DisplayAodRequest::Enter,
+                Duration::from_millis(20),
+            )
             .unwrap();
         assert_eq!(result["timeoutMinutes"], 5);
+        let result = manager
+            .display_aod_timeout(
+                "aod-board",
+                DisplayAodRequest::Query,
+                Duration::from_millis(20),
+            )
+            .unwrap();
+        assert!(result["persisted"].is_boolean());
         assert!(manager.device_response_waiters.lock().unwrap().is_empty());
     }
     #[test]
@@ -484,8 +529,10 @@ mod tests {
             let error = manager
                 .display_aod_timeout(
                     "aod-board",
-                    Some(30),
-                    Some(vec!["time".into()]),
+                    DisplayAodRequest::Set {
+                        timeout: 30,
+                        items: vec!["time".into()],
+                    },
                     Duration::from_millis(10),
                 )
                 .unwrap_err();
@@ -520,6 +567,12 @@ mod tests {
         let enter =
             json!({"operation":"enter","requestId":"r","expectedBoardDeviceId":"aod-board"});
         assert!(validate_write(connection, Some("aod-board"), Some(1), &enter).is_ok());
+        let query =
+            json!({"operation":"query","requestId":"r","expectedBoardDeviceId":"aod-board"});
+        assert!(validate_write(connection, Some("aod-board"), Some(1), &query).is_ok());
+        let mut query_extra = query.clone();
+        query_extra["timeoutMinutes"] = json!(5);
+        assert!(validate_write(connection, Some("aod-board"), Some(1), &query_extra).is_err());
         assert!(validate_write(connection, None, Some(1), &set).is_err());
         assert!(validate_write(connection, Some("aod-board"), None, &set).is_err());
         assert!(validate_write(connection, Some("aod-board"), Some(2), &set).is_err());

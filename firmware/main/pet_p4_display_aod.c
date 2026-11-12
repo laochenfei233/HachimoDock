@@ -28,6 +28,7 @@ static double weather_temp_c;
 static char weather_cond[PET_P4_AOD_WEATHER_COND_MAX];
 static bool weather_valid;
 static bool boot_loaded;
+static bool last_persist_ok;
 
 static bool item_valid(pet_p4_aod_item_t item) {
   return item >= PET_P4_AOD_ITEM_NONE && item <= PET_P4_AOD_ITEM_AGENT;
@@ -189,7 +190,8 @@ const char *pet_p4_display_aod_apply_config(
     if (err == ESP_OK) err = nvs_commit(handle);
     nvs_close(handle);
   }
-  if (persisted) *persisted = err == ESP_OK;
+  last_persist_ok = err == ESP_OK;
+  if (persisted) *persisted = last_persist_ok;
   return NULL;
 }
 
@@ -280,7 +282,8 @@ char *pet_p4_display_aod_reply(
   const cJSON *expected = cJSON_GetObjectItemCaseSensitive(payload, "expectedBoardDeviceId");
   bool is_set = cJSON_IsString(operation) && !strcmp(operation->valuestring, "set");
   bool is_enter = cJSON_IsString(operation) && !strcmp(operation->valuestring, "enter");
-  if ((!is_set && !is_enter)
+  bool is_query = cJSON_IsString(operation) && !strcmp(operation->valuestring, "query");
+  if ((!is_set && !is_enter && !is_query)
       || !cJSON_IsString(request_id) || !request_id->valuestring[0]
       || !cJSON_IsString(expected)
       || strcmp(expected->valuestring, state->board_device_id))
@@ -312,9 +315,11 @@ char *pet_p4_display_aod_reply(
     count = (unsigned) size;
   }
   bool applied = false;
-  bool persisted = false;
+  bool persisted = is_query ? last_persist_ok : false;
   const char *error = NULL;
-  if (is_enter) {
+  if (is_query) {
+    applied = true;
+  } else if (is_enter) {
     /* 已在息屏时视为成功;touch_test 诊断页除外。 */
     applied = pet_p4_display_aod_active()
       || pet_p4_display_aod_request_enter(state,

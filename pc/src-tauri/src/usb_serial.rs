@@ -66,6 +66,7 @@ mod live_audio_pacing;
 mod media_arbitration;
 mod master_volume;
 mod display_aod;
+pub(crate) use display_aod::DisplayAodRequest;
 use live_audio_pacing::write_serial_live_frame;
 #[cfg(windows)]
 mod windows_serial;
