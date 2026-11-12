@@ -13,6 +13,8 @@
 #define PET_P4_AOD_BRIGHTNESS_PERCENT 15u
 /* 唤醒宽限窗:吞掉同一物理交互的后续队列事件(触摸合成手势/旋钮多格)。 */
 #define PET_P4_AOD_WAKE_GRACE_MS 300ULL
+/* 触摸笔画闩锁绝对上限:指针永不抬起(ghost contact/触控任务死亡)时自动失效。 */
+#define PET_P4_AOD_STROKE_MAX_MS 5000ULL
 
 typedef enum {
   PET_P4_AOD_ITEM_NONE = 0,

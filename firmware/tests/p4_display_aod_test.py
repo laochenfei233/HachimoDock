@@ -46,6 +46,11 @@ def test_input_touch_and_main_loop_funnels():
         input_source.index("pet_p4_display_aod_consume_input")
         < input_source.index("handle_approval_input(state, send_line, ctx, &event)")
     )
+    # 笔画闩锁只约束触摸侧:按键/摇杆离散事件不被连带吞掉,且有 5s 兜底。
+    aod = source("main/pet_p4_display_aod.c")
+    consume_input = function(aod, "pet_p4_display_aod_consume_input")
+    assert "wake_until_pointer_up" not in consume_input
+    assert "PET_P4_AOD_STROKE_MAX_MS" in aod
     # 主循环在 input_process 之后推进状态机(同一 state 锁内)。
     assert (
         main_source.index("pet_p4_input_process(&g_state, transport_send_line, NULL);")
@@ -118,6 +123,7 @@ typedef struct {
   char screen_page[16];
 } pet_p4_runtime_state_t;
 #define PET_P4_AOD_WAKE_GRACE_MS 300ULL
+#define PET_P4_AOD_STROKE_MAX_MS 5000ULL
 #define PET_P4_AOD_BRIGHTNESS_PERCENT 15u
 static unsigned long long fake_now;
 static unsigned long long esp_timer_get_time(void) { return fake_now * 1000ULL; }
@@ -129,6 +135,7 @@ static bool aod_active;
 static char prev_page[16];
 static unsigned long long last_input_ms;
 static unsigned long long wake_grace_until_ms;
+static unsigned long long stroke_deadline_ms;
 static bool wake_until_pointer_up;
 """
 
@@ -175,17 +182,24 @@ int main(void) {
   assert(pet_p4_display_aod_consume_touch(&st, false));
   fake_now = 1400;
   assert(!pet_p4_display_aod_consume_touch(&st, false));
-  /* 笔画未结束时的按键事件也不落入恢复页;UP 之后恢复。 */
+  /* 笔画闩锁只约束触摸:宽限过期后笔画中的按键照常派发;UP 结束笔画。 */
   fake_now = 2000;
   assert(pet_p4_display_aod_request_enter(&st, fake_now));
   assert(pet_p4_display_aod_consume_touch(&st, false));
-  assert(pet_p4_display_aod_consume_input(&st));
-  fake_now = 2010;
-  assert(pet_p4_display_aod_consume_touch(&st, true));
-  /* 笔画结束后宽限窗仍有效(吞残留事件),窗口外恢复分发。 */
-  fake_now = 2100;
-  assert(pet_p4_display_aod_consume_input(&st));
   fake_now = 2400;
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  assert(!pet_p4_display_aod_consume_input(&st));
+  fake_now = 2450;
+  assert(pet_p4_display_aod_consume_touch(&st, true));
+  assert(!pet_p4_display_aod_consume_input(&st));
+  /* 兜底:指针永不抬起时,笔画闩锁 5s 后自动失效,触摸恢复分发。 */
+  fake_now = 3000;
+  assert(pet_p4_display_aod_request_enter(&st, fake_now));
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  fake_now = 3100;
+  assert(pet_p4_display_aod_consume_touch(&st, false));
+  fake_now = 8200;
+  assert(!pet_p4_display_aod_consume_touch(&st, false));
   assert(!pet_p4_display_aod_consume_input(&st));
   return 0;
 }

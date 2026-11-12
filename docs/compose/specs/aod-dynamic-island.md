@@ -28,11 +28,11 @@ Grill 阶段用户未应答,两个决策轴按推荐项落定:
 
 - 新文件 `firmware/main/pet_p4_display_aod.c/.h`(加入 CMakeLists 源列表),内聚:配置、持久化、状态机、天气缓存。
 - 配置:`timeout_min`(uint16,0=禁用,上限 1440)、`items[2]`(枚举 `none/time/date/weather/agent`,去重)。NVS 持久化照 `pet_p4_audio_volume.c` 的 durable/boot 模式。出厂默认:timeout=5,items={time,date}。
-- 输入打点:`pet_p4_input.c` 的触摸/按键事件派发处调 `pet_p4_display_aod_note_input()` 记录 `last_input_ms`。
+- 输入打点与唤醒吞咽:`pet_p4_input.c`/`pet_p4_touch.c` 队列循环首行调 `pet_p4_display_aod_consume_input()` / `pet_p4_display_aod_consume_touch(state, stroke_end)`,记录 `last_input_ms`;AOD 激活时吞掉事件并唤醒。
 - 状态机入口 `pet_p4_display_aod_process(now_ms, &g_state)`,在 `pet_p4_main.c` 主循环 `pet_p4_input_process` 之后(持 `g_state_mutex` 内)调用:
   - 自动进入条件:未激活 && timeout_min>0 && now-last_input≥timeout && `!pet_p4_conversation_active` && 无 asset/OTA 传输 && `!pet_p4_audio_playback_active` && `!pet_p4_audio_music_active` && screen_page 非 `aod`/`touch_test`。进入:记录 prev_page → `screen_page="aod"` → 背光降至 `PET_P4_AOD_BRIGHTNESS_PERCENT`(15)。
   - 退出:激活时任一输入事件 → 恢复 prev_page → 背光恢复 100。touch_test 自动回 main 的既有模式(`pet_p4_main.c` while 循环内)为参照。
-  - 唤醒宽限(评审修复):一次物理交互由多条队列事件构成(触摸 DOWN..UP+合成手势、旋钮多格、摇杆 REPEAT)。唤醒只消费第一条;其后 300ms 宽限窗(`PET_P4_AOD_WAKE_GRACE_MS`)内继续吞事件,触摸侧再叠加"吞到笔画抬起/取消为止"(`pet_p4_display_aod_consume_touch(state, stroke_end)`),防止"点一下唤醒"变成恢复页的一次点击/滑动。
+  - 唤醒宽限(评审修复):一次物理交互由多条队列事件构成(触摸 DOWN..UP+合成手势、旋钮多格、摇杆 REPEAT)。唤醒只消费第一条;其后 300ms 宽限窗(`PET_P4_AOD_WAKE_GRACE_MS`)内继续吞事件。触摸侧叠加笔画闩锁:吞到抬起/取消为止(`pet_p4_display_aod_consume_touch(state, stroke_end)`),闩锁带 5s 绝对上限(`PET_P4_AOD_STROKE_MAX_MS`,ghost contact 卡死时自动失效恢复分发),且只约束触摸侧——按键/旋钮/摇杆是离散事件,不被笔画连带吞掉。
   - 外部改页(评审修复):AOD 激活中页面被外部切换(PC `control/screen-page`、媒体自动切 app)时,只退出调暗态(背光恢复 100、清 prev_page),保留外部新页;不得回滚 prev_page。
   - PC 显式 enter(`operation:"enter"`)绕过自动门控(对话/传输中也可进),但 touch_test 页除外。
 - 背光:`pet_p4_lcd.c` 增 `pet_p4_lcd_set_brightness(percent)` 薄封装;开机 reveal 已把背光脚改为普通 GPIO(断开 LEDC 路由),实现用与 BSP 同参的 `ledc_channel_config`(timer 1 / 10-bit / 5 kHz)一次调用完成重挂载+占空设置,进/出息屏是唯一运行期调用点。
@@ -68,7 +68,7 @@ Grill 阶段用户未应答,两个决策轴按推荐项落定:
 ### S2.5 PC:天气数据搭载心跳
 
 - 新小模块(如 `pc/src-tauri/src/aod_weather.rs`):懒加载 hachimi-weather 的 `pc/application.json` Profile(复用 component_app 既有加载路径),模块内 OnceLock 持 Cache/GeoCache;城市用 `shared_location::weather()` 共享城市,否则 `locate_background` IP 自动。
-- `send_inner` 心跳 clock 注入处(usb_serial.rs:3086-3089)并列加一块:`capabilities["displayAod"]==ENGINE` 且 `aod_weather::snapshot()` 有新值时写入 `payload["aod"]`;内部每 60 秒踢一次 `locate/refresh_background`(网络节流由 profile.refreshSec 与服务器缓存头控制,踢频不影响请求率),`current()` 产出变化或超过 60 分钟未携带才写入,平时心跳载荷不变。快照函数必须廉价(锁 + 读取,网络全在后台)。PC 侧 `cond` 截断到 10 个字符以对齐固件 `PET_P4_AOD_WEATHER_COND_MAX`(31 字节)上限。
+- `send_inner` 心跳 clock 注入处(usb_serial.rs:3086-3089)并列加一块:`capabilities["displayAod"]==ENGINE` 且 `aod_weather::snapshot()` 有新值时写入 `payload["aod"]`;内部每 60 秒踢一次 `locate/refresh_background`(网络节流由 profile.refreshSec 与服务器缓存头控制,踢频不影响请求率),`current()` 产出(截断后 cond/取整温度)变化或超过 1 小时未携带(`SENT_STALENESS_SEC`)才写入,平时心跳载荷不变。快照函数必须廉价(锁 + 读取,网络全在后台)。PC 侧 `cond` 截断到 10 个字符以对齐固件 `PET_P4_AOD_WEATHER_COND_MAX`(31 字节)上限。
 
 ### S2.6 PC:设置 UI
 

@@ -118,35 +118,54 @@ static void exit_aod(pet_p4_runtime_state_t *state) {
 }
 
 /* 唤醒宽限:一次物理交互由多条队列事件构成(触摸 DOWN..UP+合成手势、旋钮
- * 多格、摇杆 REPEAT)。唤醒只消费第一条,其余事件在宽限窗内继续吞掉;触摸
- * 笔画则吞到抬起/取消为止,避免"点一下唤醒"变成恢复页的一次点击。 */
+ * 多格、摇杆 REPEAT)。唤醒只消费第一条;按键/旋钮/摇杆是离散事件,300ms
+ * 宽限窗已覆盖多格/REPEAT,之后永远照常派发;触摸笔画则吞到抬起/取消为止
+ * (带 5s 绝对上限,指针永不抬起时自动失效),避免"点一下唤醒"变成恢复页
+ * 的一次点击。笔画闩锁只约束触摸侧,最坏退化是"触摸暂不可用",按键始终活着。 */
 static unsigned long long wake_grace_until_ms;
+static unsigned long long stroke_deadline_ms;
 static bool wake_until_pointer_up;
 
-static bool consume_wake(pet_p4_runtime_state_t *state, unsigned long long now,
-    bool wake_until_pointer_up_next) {
+static bool consume_wake(pet_p4_runtime_state_t *state, unsigned long long now) {
   last_input_ms = now;
   if (aod_active) {
     if (state) exit_aod(state);
-    wake_until_pointer_up = wake_until_pointer_up_next;
+    wake_until_pointer_up = false;
     wake_grace_until_ms = now + PET_P4_AOD_WAKE_GRACE_MS;
     return true;
   }
-  if (wake_until_pointer_up || now < wake_grace_until_ms) return true;
+  if (now < wake_grace_until_ms) return true;
   return false;
 }
 
 bool pet_p4_display_aod_consume_input(pet_p4_runtime_state_t *state) {
   unsigned long long now = (unsigned long long) (esp_timer_get_time() / 1000ULL);
-  /* 按键/摇杆事件不结束触摸笔画吞咽;唤醒本身改由按键发起时结束笔画模式。 */
-  return consume_wake(state, now, false);
+  return consume_wake(state, now);
 }
 
 bool pet_p4_display_aod_consume_touch(pet_p4_runtime_state_t *state, bool stroke_end) {
   unsigned long long now = (unsigned long long) (esp_timer_get_time() / 1000ULL);
-  bool swallow = consume_wake(state, now, aod_active);
-  if (swallow && wake_until_pointer_up && stroke_end) wake_until_pointer_up = false;
-  return swallow;
+  last_input_ms = now;
+  if (aod_active) {
+    if (state) exit_aod(state);
+    wake_until_pointer_up = true;
+    stroke_deadline_ms = now + PET_P4_AOD_STROKE_MAX_MS;
+    wake_grace_until_ms = now + PET_P4_AOD_WAKE_GRACE_MS;
+    return true;
+  }
+  if (wake_until_pointer_up) {
+    if (stroke_end) {
+      wake_until_pointer_up = false;
+      return true; /* UP/CANCEL 样本本身属于被吞的交互;此后只剩 grace。 */
+    }
+    if (now >= stroke_deadline_ms) {
+      wake_until_pointer_up = false;
+      return false; /* 5s 兜底:ghost contact 卡死时该样本起恢复分发。 */
+    }
+    return true;
+  }
+  if (now < wake_grace_until_ms) return true;
+  return false;
 }
 
 void pet_p4_display_aod_process(pet_p4_runtime_state_t *state, unsigned long long now_ms) {
