@@ -100,7 +100,6 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
     window.addEventListener("focus", refresh);
     return () => { cancelled = true; window.removeEventListener(API_CONFIGURATION_UPDATED_EVENT, refresh); window.removeEventListener("focus", refresh); };
   }, [previewAvailableProp]);
-  const previewAvailable = previewReady;
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
