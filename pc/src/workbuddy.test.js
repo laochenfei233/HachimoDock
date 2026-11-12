@@ -141,7 +141,7 @@ test("Windows WorkBuddy reads Chromium only through the native UIA COM client", 
     assert.doesNotMatch(path, /Automation\.AutomationElement|Automation\.TreeWalker|Find-BoundedComposerElements|Find-PointComposerElements/);
   }
   assert.match(workbuddyPaths[3], /Test-CurrentElectronAgent \$state.Agent[\s\S]*\[WorkBuddyUia\]::FindBounded/);
-  assert.match(source, /return @\('workbuddy','deepseek-harness'\) -contains \$agent/);
+  assert.match(source, /return @\('workbuddy','deepseek-harness','prism-agent'\) -contains \$agent/);
   const native = between("public static class WorkBuddyUia {", '"@');
   assert.match(native, /e22ad333-b25f-460c-83d0-0581107395c9/);
   assert.match(native, /GetRawViewWalker\(\)/);
