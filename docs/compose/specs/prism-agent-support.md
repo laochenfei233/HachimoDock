@@ -1,14 +1,23 @@
 ---
 feature: prism-agent-support
-status: designed
-updated: 2026-11-11
+status: delivered
+updated: 2026-11-12
 branch: feat/prism-agent-support
-commits: 361cb0e..(交付时填写)
+commits: 361cb0e..571258a
 ---
 
 # Prism agent 选项：检测、桥接适配与会话切换
 
 ## Report
+
+**交付内容** — prism-agent 成为可选择的 agent 通道：前端 `FIXED_AGENT_OPTIONS` 加 `prism-agent`（排 DeepSeek 之后）；Rust `detect_prism*` 镜像 `detect_dsh*`（应用包、`Contents/Resources/runtime/prism/lib/bin.js` 捆绑 CLI、`~/.prism/bin/prism`、profile `~/.prism/profiles/web`），classify 抽出带 label 的公共实现且 DeepSeek 行为逐字不变；`adapters/prism.js` 继承 DshAdapter（dsh.js 新增 label/capabilityFile/agentId/acl 选项，默认值保持 DSH 行为），注册进 agent-session-bus `cli.js` 与 headless-mqtt；`dsh_auth.rs` 以 `Bridge` 枚举参数化（`Dsh` | `Prism` 各读各的 descriptor，post 白名单加 `/sessions/activate`）；两个审批中继各自绑定自己的 descriptor（事件流撤销监视器按归属读取——评审修复）；设备会话气泡切换经 `switchableDesktopSession`/`emitActivatedSession`（纯函数单测）调 `prism_activate_session` 命令，POST 桥的 `/sessions/activate`，不抢窗口焦点。交付时省略 prism 的 pair/connection 命令（语音走通用 OS composer；S2.4 已记录）。
+
+**验证** — node --test 八个套件（prism-adapter、server、codex-adapter、agent-appearance-config、useDeviceVoiceRouter、useP4SessionSync、agent-voice-capabilities、agent-switch-responsiveness）112 测试 0 失败；`rustfmt --check` 触碰的 Rust 代码解析干净（既有风格差异除外）；`cargo check --lib` 在本机 PRE-EXISTING 失败（ring 0.17.14 vs MSVC 14.50，未改动的 main 同样失败），无法在本机编译 Rust。一轮评审（REQUEST_CHANGES：中继监视器读错 descriptor、捆绑 CLI 路径指向目录、缺切换处理单测）全部修复后复审通过。
+
+**Journey log** —
+- 共享的传输/审批 Rust 模块参数化 descriptor 归属时，每一处内部重读（尤其是事件流里的撤销监视器）都必须带归属——漏一处就是"prism 中继拿 DSH descriptor 自撤销"这种只在运行时现形的错。
+- 上游 dsh-adapter.test.js 的 Windows ACL 路径在 macOS 上标 NOT_RUN；本机 PowerShell create-directory 阶段真实失败，prism 适配器测试通过注入 acl 替身（复现其文件系统副作用）保持可跑。
+- 桌面端复用 DSH 线协议的钥匙是把 DshAdapter 的身份三要素（agentId/label/capabilityFile）参数化而不是复制 456 行。
 
 ## [S1] 问题
 
@@ -47,13 +56,13 @@ HachimoDock 已适配 DeepSeek Harness，但 prism-agent 是安装身份独立�
 
 ## Tasks
 
-- [ ] T1: `FIXED_AGENT_OPTIONS` 加 prism-agent（依赖：无）
-- [ ] T2: Rust `detect_prism()` 与注册（依赖：T1）
-- [ ] T3: `adapters/prism.js` 与两处注册（依赖：T1）
+- [x] T1: `FIXED_AGENT_OPTIONS` 加 prism-agent（依赖：无）
+- [x] T2: Rust `detect_prism()` 与注册（依赖：T1）
+- [x] T3: `adapters/prism.js` 与两处注册（依赖：T1）
 - [x] T4: `dsh_auth` 归属参数化 + 审批中继（`prism_activate_session` 切换命令在 S2.5）（依赖：T3）
-- [ ] T5: 设备会话选择 → `POST /sessions/activate`（依赖：T3）
-- [ ] T6: 测试（适配器测试镜像 `dsh-adapter.test.js`；检测单测注入 home）（依赖：T2、T3）
-- [ ] T7: 文档（依赖：T6）
+- [x] T5: 设备会话选择 → `POST /sessions/activate`（依赖：T3）
+- [x] T6: 测试（适配器测试镜像 `dsh-adapter.test.js`；检测单测注入 home）（依赖：T2、T3）
+- [x] T7: 文档（依赖：T6）
 
 ## [S4] 验收
 
