@@ -90,7 +90,7 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 - [x] T2: 写组件包 JSON（component.json、negative-screen.json、buttons.json、runtime/widget.json、share.json、pc/application.json） (depends: none)
 - [x] T3: validate_generated_widget.py 退出码 0；修复全部结构/素材/表达式错误 (depends: T1,T2)
 - [x] T4: Review（独立 subagent 审查组件包与 spec 一致性） (depends: T3)
-- [ ] T5: publish_generated_widget.py 原子发布并报告 jobId/版本哈希 (depends: T4)
+- [x] T5: publish_generated_widget.py 原子发布并报告 jobId/版本哈希（jobId 20261112T114844957683Z-3e58a2bd，versionHash 05e02cc0e0eb9afc） (depends: T4)
 
 ## [S4] Acceptance
 
