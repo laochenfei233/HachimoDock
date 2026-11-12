@@ -2,8 +2,9 @@
  * [Input] Desktop sources (DeviceContext, DeviceDashboard, RealtimeChatPanel, ApiSettings,
  *         PersonaVoiceModal), the Tauri Rust modules, the ESP32-P4 firmware sources and protocol doc.
  * [Output] Cross-module contract coverage for 实时对话: the board key round-trips through Rust to
- *          the UI, the persona/voice start payload, credential storage, the streamed playback and
- *          conversation topics, the HUD/animation override, and the docs that declare them.
+ *          the UI, the persona/voice start payload (with the per-appearance TTS provider),
+ *          credential storage, the streamed playback and conversation topics, the HUD/animation
+ *          override, and the docs that declare them.
  * [Pos] test node in ref/src
  * [Sync] If this file changes, update `ref/src/.folder.md`.
  */
@@ -62,7 +63,7 @@ test("start payload carries the assembled system prompt, greeting and camelCase 
   assert.equal(input.displayName, "Torti");
   assert.match(input.systemPrompt, /你是「Torti」/);
   assert.ok(input.greeting.length > 0);
-  assert.deepEqual(Object.keys(input.voice).sort(), ["cloneSpeakerId", "speaker", "speed", "volume"]);
+  assert.deepEqual(Object.keys(input.voice).sort(), ["cloneSpeakerId", "provider", "speaker", "speed", "volume"]);
   assert.equal(voiceSpecFor({ voice: { clone_speaker_id: " S_x " } }).cloneSpeakerId, "S_x");
   assert.equal(previewTextFor({ greeting: "汪！" }), "汪！");
 });
@@ -140,9 +141,10 @@ test("API settings persist the LLM and Doubao TTS credentials and the modal prev
   const settings = read("pc/src/ApiSettings.jsx");
   assert.match(settings, /invoke\("load_voice_chat_settings"\)/);
   assert.match(settings, /invoke\("save_voice_chat_settings"/);
-  assert.match(settings, /语音识别与合成/);
-  assert.match(settings, /语音 API Key（识别与合成共用）/);
-  assert.doesNotMatch(settings, /api-settings-tts-key|api-settings-tts-resource|api-settings-asr-resource/);
+  assert.match(settings, /title="语音识别"/);
+  assert.match(settings, /title="语音合成"/);
+  assert.match(settings, /API Key（识别与合成共用）/);
+  assert.doesNotMatch(settings, /api-settings-tts-resource|api-settings-asr-resource/);
   assert.match(settings, /对话大模型/);
   assert.match(settings, /LLM_PRESETS/);
   assert.match(read("pc/src/lib/api-configuration.js"), /id: "deepseek"[\s\S]*id: "doubao"[\s\S]*id: "mimo"/);

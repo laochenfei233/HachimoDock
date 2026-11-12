@@ -1,7 +1,8 @@
 /**
  * [Input] `lib/persona-voice.js` pure helpers.
  * [Output] Unit coverage for defaults, factory Terrier persona, normalization/configured flag,
- *          validation, speaker labels, realtime system prompt assembly, and the pending-setup marker.
+ *          schema v2 provider migration, provider voice options, validation, speaker labels,
+ *          realtime system prompt assembly, and the pending-setup marker.
  * [Pos] test node in ref/src/lib
  * [Sync] If this file changes, update `ref/src/.folder.md`.
  */
@@ -13,7 +14,9 @@ import {
   DEFAULT_SPEAKER_ID,
   DOUBAO_SPEAKERS,
   PERSONA_TEMPLATES,
+  PERSONA_VOICE_SCHEMA_VERSION,
   TTS_PROVIDER_DOUBAO,
+  TTS_VOICE_PROVIDERS,
   buildRealtimeSystemPrompt,
   clearPersonaSetupPending,
   createDefaultPersonaVoice,
@@ -23,6 +26,8 @@ import {
   normalizePersonaVoice,
   personaSummaryLabel,
   validatePersonaVoice,
+  voiceOptionsFor,
+  voiceSpecFor,
 } from "./persona-voice.js";
 
 test("built-in Terrier ships Peiqi 2.0 without changing the general voice default", () => {
@@ -73,11 +78,81 @@ test("a saved document is normalized, clamped and reported as configured", () =>
   assert.equal(record.persona.display_name, "Torti");
   assert.equal(record.persona.language, "en");
   assert.equal(record.persona.forbidden, "");
-  assert.equal(record.voice.provider, TTS_PROVIDER_DOUBAO);
+  assert.equal(record.voice.provider, "", "legacy v1 documents always follow the global provider");
   assert.equal(record.voice.speed, 2);
   assert.equal(record.voice.volume, 0.2);
   assert.equal(personaSummaryLabel(record), "Torti · Vivi 2.0");
   assert.match(record.voiceMigrationNotice, /旧版音色/);
+});
+
+test("schema v2 keeps explicit providers; legacy v1 docs coerce doubao_tts to follow-global", () => {
+  assert.equal(PERSONA_VOICE_SCHEMA_VERSION, 2);
+  assert.deepEqual(TTS_VOICE_PROVIDERS.map(({ id, label }) => ({ id, label })), [
+    { id: "", label: "跟随全局" },
+    { id: "doubao_tts", label: "豆包" },
+    { id: "dashscope_tts", label: "通义千问" },
+    { id: "mimo_tts", label: "MiMo" },
+    { id: "custom_tts", label: "自定义" },
+  ]);
+  const v2 = normalizePersonaVoice(
+    {
+      schema_version: 2,
+      persona: { display_name: "小黑", style: "沉稳" },
+      voice: { provider: "dashscope_tts", speaker: "longxiaochun_v3", speed: 1, volume: 1 },
+    },
+    { name: "小黑" },
+  );
+  assert.equal(v2.voice.provider, "dashscope_tts");
+  assert.equal(v2.voice.speaker, "longxiaochun_v3");
+  const formLike = normalizePersonaVoice(
+    {
+      persona: { schema_version: 2, display_name: "小黑", style: "沉稳" },
+      voice: { provider: "mimo_tts", speaker: "female", speed: 1, volume: 1 },
+    },
+    { name: "小黑" },
+  );
+  assert.equal(formLike.voice.provider, "mimo_tts", "v2-era form objects keep an explicit provider");
+  const unknownV2 = normalizePersonaVoice(
+    {
+      schema_version: 2,
+      persona: { display_name: "小黑", style: "沉稳" },
+      voice: { provider: "openai_tts", speaker: "alloy", speed: 1, volume: 1 },
+    },
+    { name: "小黑" },
+  );
+  assert.equal(unknownV2.voice.provider, "");
+  const legacy = normalizePersonaVoice(
+    {
+      schema_version: 1,
+      persona: { display_name: "小黑", style: "沉稳" },
+      voice: { provider: TTS_PROVIDER_DOUBAO, speaker: DEFAULT_SPEAKER_ID, speed: 1, volume: 1 },
+    },
+    { name: "小黑" },
+  );
+  assert.equal(legacy.voice.provider, "", "the old forced doubao_tts value is not a user choice");
+  assert.equal(legacy.voice.speaker, DEFAULT_SPEAKER_ID);
+});
+
+test("voiceSpecFor carries the provider and voice options follow the resolved provider", () => {
+  assert.deepEqual(voiceSpecFor({ voice: { provider: "dashscope_tts", speaker: "longshu_v3", speed: 1.2, volume: 0.8 } }), {
+    provider: "dashscope_tts",
+    speaker: "longshu_v3",
+    cloneSpeakerId: "",
+    speed: 1.2,
+    volume: 0.8,
+  });
+  assert.equal(voiceSpecFor({ voice: {} }).provider, "");
+  assert.equal(createDefaultPersonaVoice({ name: "小黑" }).voice.provider, "", "new appearances follow the global provider");
+  assert.equal(voiceOptionsFor("", DEFAULT_SPEAKER_ID).some((speaker) => speaker.id === DEFAULT_SPEAKER_ID), true);
+  assert.equal(voiceOptionsFor(TTS_PROVIDER_DOUBAO, "", "佩奇").some((speaker) => speaker.label === "佩奇猪 2.0"), true);
+  const dashscope = voiceOptionsFor("dashscope_tts", "longxiaochun_v3");
+  assert.equal(dashscope.length, 6);
+  assert.equal(dashscope[0].id, "longxiaochun_v3");
+  const dashscopeCustom = voiceOptionsFor("dashscope_tts", "my-voice");
+  assert.equal(dashscopeCustom[0].id, "my-voice");
+  assert.equal(dashscopeCustom.length, 7);
+  assert.deepEqual(voiceOptionsFor("mimo_tts"), []);
+  assert.deepEqual(voiceOptionsFor("custom_tts", "warm voice"), [{ id: "warm voice", label: "warm voice" }]);
 });
 
 test("validation requires name, style and a speaker; cloned voice satisfies the speaker rule", () => {
