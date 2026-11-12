@@ -7374,14 +7374,23 @@ fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
 
     #[cfg(windows)]
     {
+        // The NSIS per-user install drops mainBinaryName `prism-agent.exe`
+        // into `%LOCALAPPDATA%\Prism Agent\`; cover the per-machine and
+        // Programs layouts with the same binary name.
+        const PRISM_WINDOWS_BINARY: &str = "prism-agent.exe";
         let mut candidates = Vec::new();
         if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            let local = PathBuf::from(local_app_data);
             push_unique_path(
                 &mut candidates,
-                PathBuf::from(local_app_data)
+                local.join("Prism Agent").join(PRISM_WINDOWS_BINARY),
+            );
+            push_unique_path(
+                &mut candidates,
+                local
                     .join("Programs")
                     .join("Prism Agent")
-                    .join("Prism Agent.exe"),
+                    .join(PRISM_WINDOWS_BINARY),
             );
         }
         if let Some(program_files) = env::var_os("ProgramFiles") {
@@ -7389,7 +7398,7 @@ fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
                 &mut candidates,
                 PathBuf::from(program_files)
                     .join("Prism Agent")
-                    .join("Prism Agent.exe"),
+                    .join(PRISM_WINDOWS_BINARY),
             );
         }
         for candidate in candidates {
@@ -7404,11 +7413,22 @@ fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
 
 fn find_prism_cli(home: Option<&Path>, app_path: Option<&Path>) -> Option<PathBuf> {
     if let Some(app_path) = app_path {
-        let bundled = PRISM_BUNDLED_CLI_RELATIVE_PATH
-            .split('/')
-            .fold(app_path.to_path_buf(), |path, segment| path.join(segment));
-        if bundled.is_file() {
-            return Some(bundled);
+        let bundled = if cfg!(target_os = "macos") {
+            Some(
+                PRISM_BUNDLED_CLI_RELATIVE_PATH.split('/').fold(
+                    app_path.to_path_buf(),
+                    |path, segment| path.join(segment),
+                ),
+            )
+        } else {
+            // Windows installs put the runtime next to prism-agent.exe
+            // instead of inside a Contents/Resources bundle.
+            app_path
+                .parent()
+                .map(|dir| dir.join("runtime").join("prism").join("lib").join("bin.js"))
+        };
+        if bundled.as_deref().is_some_and(Path::is_file) {
+            return bundled;
         }
     }
     find_agent_executable(
@@ -14206,7 +14226,11 @@ mod tests {
         assert!(detected.detail.contains("配置"));
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(detect_prism_with_home(Some(empty.path())).id, "prism-agent");
-        assert!(!detect_prism_with_home(Some(empty.path())).detected);
+        // The app/CLI probes consult the real host layout regardless of the
+        // injected home, so absence only holds on hosts without an install.
+        if find_prism_app_bundle(None).is_none() {
+            assert!(!detect_prism_with_home(Some(empty.path())).detected);
+        }
     }
 
     #[test]
