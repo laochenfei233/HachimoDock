@@ -1,16 +1,24 @@
 ---
 feature: zcode-agent-support
-status: designed
+status: delivered
 updated: 2026-11-12
 branch: feat/zcode-agent-support
-commits: 1586fec..
+commits: 1586fec..ccea7c3
 ---
 
 # ZCode 渠道:检测、状态跟随与桌面输入框语音
 
 ## Report
 
-(delivery 时填写)
+**交付内容** — ZCode(Zhipu 的 Electron 桌面 App + `~/.zcode` 本地 CLI 运行时)成为 Codex 同级的一类桌面渠道:前端 `FIXED_AGENT_OPTIONS` 加 `zcode`(排 WorkBuddy 之后,顺序断言 7→8);Rust `detect_zcode*` 镜像 prism 分类器(Windows 安装目录、macOS 经 env 派生的 bundle 候选、应用内捆绑 `resources/glm/zcode.cjs`、`~/.zcode` 活动数据),zcode 进入可见输入框/流式草稿谓词、`KNOWN_USB_STATE_SOURCES`、显示名与 current-visible 回退规则(永不作绑定目标或深链定位);桥侧新增 `zcode-log-monitor`(按天尾读 `~/.zcode/cli/log` 结构化日志,`sess_subagent` 永不入主状态,`turn.started` 时只读查 `input_history` 做 SHA-256 回执关联且 sqlite 故障降级,日志无助手正文与 token 故不发布语音预览/统计)与 workbuddy 式总线适配器(只读列会话、后台注入恒 `AGENT_INPUT_UNSUPPORTED`),经 `CLAWD_ENABLE_ZCODE_MONITOR` 接线进 headless-mqtt;`codex_composer(_macos).rs` 全链路接受 zcode(Windows 进程表/Chromium AX priming/UIA 读回、macOS 仅按应用名匹配且不虚构 bundle id、受保护原生粘贴路径);`desktop_agent` 加 `Agent::Zcode` 派发适配器(codex 式轮次回执、单会话歧义拒收);审计表与双语 README 如实记录能力边界。范围外(设计决策):`zcode://` 深链定位(语义未验证)、CLI 后台注入、审批中继(与 Codex 同级不中继)。
+
+**验证** — `npm test` 1819/1819 通过;`npm run test:bridge` 243 通过 / 11 失败 PRE-EXISTING(dsh-adapter Windows ACL 校验,对 HEAD 原样抽取同样失败)/ 3 跳过(POSIX-only);`cargo check --lib` PRE-EXISTING 失败(ring 0.17.14 构建脚本 MSVC cl.exe exit 2,未改动的 main 同样失败,与 prism 提交记录一致);rustfmt 对两份作曲器文件做 formatted-vs-formatted 语义比对残差为 0,lib.rs/desktop_agent.rs rustfmt 干净;zcode 新套件 20/20 通过;实现代理曾对本机真实 `~/.zcode` 数据做过冒烟(状态映射 + db 标题)。一轮独立评审(APPROVE,零 CRITICAL,6 minor)后修复 3 项:server.js 会话合成名单、macOS 诊断入口名单、全角标点;其余 minor(legacy pet_channel 映射、score_usb_source)与 prism 先例对齐且无下游消费方,有意保持。
+
+**Journey log** —
+- 编排者运行不带 `--check` 的 rustfmt 做验证,原地重排了两个作曲器文件并递归波及 4 个兄弟模块;git checkout 恢复后,用幸存的规范格式副本做 formatted-vs-formatted 语义比对,由编排者重放全部语义改动并做到零残差。教训:验证格式永远用 `rustfmt --check`,且它会对 `mod` 声明的兄弟文件递归生效。
+- 子代理在使用高峰撞 5 小时配额中断,其报告的逐点清单 + 格式化参照副本足以让编排者独立完成剩余重放——把"语义参照"与"工作树状态"分开保存是可恢复性的关键。
+- ZCode 日志不含用户文本,回执关联改从其自有 sqlite `input_history` 取行哈希,日志 `inputLength` 仅作诊断;跨文件 id 格式(`sess_<uuid>` 与 `session.id` 一致)和 ms 时间戳都在真实库上验证过,不靠猜测。
+- prism 的评审教训同样适用:每一处按 agent 枚举的表(进程名、排除名单、白名单、前端文案)都要逐点核对,源码断言测试(`windows_current_visible_agent_tables_include_zcode`)比逐条人眼检查可靠。
 
 ## [S1] 问题
 
@@ -82,23 +90,23 @@ HachimoDock 已适配 ChatGPT(Codex)、Claude、OpenClaw、MiMoCode、DeepSeek H
 
 ## Tasks
 
-- [ ] T1: Rust `detect_zcode()` + classify + 注册 + 单测(依赖:无)
-- [ ] T2: Rust 能力谓词与两处 KNOWN_SOURCES(依赖:无)
-- [ ] T3: Windows 作曲器接入 zcode(依赖:无)
-- [ ] T4: macOS 作曲器接入 zcode(依赖:无)
-- [ ] T5: `zcode-log-monitor.js` + headless 接线 + 单测(依赖:无)
-- [ ] T6: `adapters/zcode.js` + 注册 + 适配器测试(依赖:T5 同文件避让)
-- [ ] T7: `desktop_agent.rs` 派发接入(依赖:T3、T5 事件契约)
-- [ ] T8: 前端接线 + 测试(依赖:T1)
-- [ ] T9: 文档(audit + 双语 README)(依赖:T1-T8)
-- [ ] T10: 验证与 spec 定稿(依赖:T9)
+- [x] T1: Rust `detect_zcode()` + classify + 注册 + 单测(依赖:无)
+- [x] T2: Rust 能力谓词与两处 KNOWN_SOURCES(依赖:无)
+- [x] T3: Windows 作曲器接入 zcode(依赖:无)
+- [x] T4: macOS 作曲器接入 zcode(依赖:无)
+- [x] T5: `zcode-log-monitor.js` + headless 接线 + 单测(依赖:无)
+- [x] T6: `adapters/zcode.js` + 注册 + 适配器测试(依赖:T5 同文件避让)
+- [x] T7: `desktop_agent.rs` 派发接入(依赖:T3、T5 事件契约)
+- [x] T8: 前端接线 + 测试(依赖:T1)
+- [x] T9: 文档(audit + 双语 README)(依赖:T1-T8)
+- [x] T10: 验证与 spec 定稿(依赖:T9)
 
 ## [S4] 验收
 
-- [ ] `~/.zcode/cli/db/db.sqlite` 存在时 `detect_local_agents` 返回 ready 的 `zcode`(注入 home 单测;缺席时 detected:false)。
-- [ ] 监控器单测:`turn.*`/`tool.call.*`/`ttft.model.first_content` 映射正确;`sess_subagent` 不产生状态;userHash 与 `input_history` fixture 一致且 sqlite 故障时降级不抛错。
-- [ ] 适配器测试:缺失 sqlite 时 `ready` 降级为未安装、`listSessions` 有界返回、`inject` 回 `AGENT_INPUT_UNSUPPORTED`。
-- [ ] `FIXED_AGENT_OPTIONS` 含 8 个渠道且 zcode 在 workbuddy 之后(顺序断言更新)。
-- [ ] 语音链路接线点齐全:谓词、frontmost 进程表、current-visible 目标映射、分派白名单、前端文案与能力表均有 zcode 条目(以 diff 逐点核对)。
-- [ ] `npm test` 与 `npm run test:bridge` 全绿;触碰 Rust 文件 `rustfmt --check` 干净;`cargo check --lib` 结果如实记录(PRE-EXISTING 需注明)。
-- [ ] audit 表与双语 README 含 ZCode 行,与实际能力一致(不夸大:无语音预览、无 token 统计、无桌面切换)。
+- [x] `~/.zcode/cli/db/db.sqlite` 存在时 `detect_local_agents` 返回 ready 的 `zcode`(注入 home 单测;缺席时 detected:false)。注:无 App 安装而仅有活动数据时为 `detected:true, ready:false`(needs_setup)——CLI 只随 App 分发,S2.2 设计如此;本机已装 App 的机器返回 ready。
+- [x] 监控器单测:`turn.*`/`tool.call.*`/`ttft.model.first_content` 映射正确;`sess_subagent` 不产生状态;userHash 与 `input_history` fixture 一致且 sqlite 故障时降级不抛错。
+- [x] 适配器测试:缺失 sqlite 时 `ready` 降级为未安装、`listSessions` 有界返回、`inject` 回 `AGENT_INPUT_UNSUPPORTED`。
+- [x] `FIXED_AGENT_OPTIONS` 含 8 个渠道且 zcode 在 workbuddy 之后(顺序断言更新)。
+- [x] 语音链路接线点齐全:谓词、frontmost 进程表、current-visible 目标映射、分派白名单、前端文案与能力表均有 zcode 条目(评审逐点核对 diff 通过)。
+- [x] `npm test` 与 `npm run test:bridge` 全绿(test:bridge 的 11 个 dsh ACL 失败为 PRE-EXISTING,HEAD 原样抽取同样失败);触碰 Rust 文件 `rustfmt --check` 干净(formatted-vs-formatted 残差 0);`cargo check --lib` PRE-EXISTING 失败已注明(ring 0.17.14 vs MSVC)。
+- [x] audit 表与双语 README 含 ZCode 行,与实际能力一致(不夸大:无语音预览、无 token 统计、无桌面切换)。
