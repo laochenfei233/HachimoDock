@@ -4869,6 +4869,12 @@ impl CodexComposerBridge {
         macos::clear_last_dsh_written();
     }
 
+    /// Prism twin of `clear_dsh_draft_cache`; the caches never share state.
+    #[allow(dead_code)] // Live invalidation happens inside update_voice; kept for parity with the DSH legacy hook.
+    pub fn clear_prism_draft_cache() {
+        macos::clear_last_prism_written();
+    }
+
     /// Bring the target agent forward before device dictation writes into it.
     pub fn activate_agent(agent_id: &str) -> bool {
         let agent = match agent_id.trim() {
