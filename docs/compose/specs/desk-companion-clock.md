@@ -12,6 +12,12 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 
 **What was built** — desk-companion-clock：host:true 的 composition v2 应用工具。纯黑背景（surface.background=0）上，左侧时钟簇居中显示 PC 本地时区的 HH:MM（分钟补零，96px/weight600 白色）、上方中文日期（YYYY年M月D日，灰）、下方天气与气温（Open-Meteo 宁波坐标，WMO 码映射中文天气文案 + 温度℃，灰）；右侧 200×200 桌宠 PNG（设备当前形象 builtin-terrier 西高地白梗的静态帧，扒桌沿姿势）。SW1 手动刷新天气（host.refresh→wx:refresh）。天气缺失/失败时天气行显示"等待数据"，时间日期不受影响。
 
+**Update (v3, 2026-11-12)** — 用户反馈时间边缘模糊、字体要更大、桌宠不能动。修复：① 高清字形图集
+（时间 96px=64px 图集 1.5x 双线性，日期/天气 28/30→32px 1:1）根因是内置点阵字库放大；② 桌宠加
+渲染器驱动 float 浮动（host 组件无 tick 的动画正解）；图集 alpha 首版被 paste 蒙版破坏（alpha 全 0）
+——改为画布直绘 + 逐字 alpha 断言。v3 校验 OK + smoke CONTRACT_OK，hash 64f21ec1a6078572
+（jobId 20261112T123747417209Z-a36731a6）。
+
 **Verification** — validate_generated_widget.py → OK exit 0（独立审查者复跑确认）；app_services.application_errors → []（composition v2 全量校验）；smoke_test_widget_game.py → CONTRACT_OK exit 0；PC 同源 app_expr 表达式模拟 4 案例（9:05/14:00 补零、2026年11月12日、多云 13.4℃、雨 22.0℃、缺失→等待数据）全部符合设计；独立 subagent 审查 Spec 合规/正确性/一致性三维 PASS，唯一 minor（RGB565 灰色算错为紫红）已修复（44373=0xAD55→RGB 173,170,173）并复验通过。真机 USB 验收未做（组件包未经设备实机显示/联网验收）。
 
 **Journey log** —
@@ -35,8 +41,9 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
   `input.engine="p4-input-v1"`。`visualStyle: "clean"`、`visualPalette: "mono"`。
 - 640×480 逻辑画布，4 个元素节点（纯黑背景由必填的 `surface.background: 0` 提供，不是节点）：
   1. 日期文本（上，居中于左侧时钟簇 cx≈220，28px，灰 44373，RGB565 0xAD55→RGB 173,170,173）；
-  2. 时间文本（中，96px weight 600，白 0xFFFF，var_bind timeStr，"HH:MM"，分钟补零）；
-  3. 天气文本（下，30px，灰 44373，"晴 13.4℃"格式）；
+  2. 时间文本（中，96px，白 0xFFFF，var_bind timeStr，"HH:MM"，分钟补零；字形来自 64px 图集，
+     固件双线性采样 1.5x，解决内置 16/32px 点阵放大 3x 的边缘模糊）；
+  3. 天气文本（下，32px，灰 44373，"晴 13.4℃"格式，CJK 走 32px 图集 1:1 渲染）；
   4. 桌宠 image 节点（右侧 x≈440，200×200 方形节点）。
 - runtime vars 仅 3 个 string：`timeStr`、`dateStr`、`wxStr`。固件 var_bind 对 int 不补零，
   所以所有格式化在 PC composition 表达式完成，设备只渲染字符串。
@@ -70,6 +77,12 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
   纯黑画布无缝融合，四角全黑）→ 200×200（P4I1 预算内，v1.0.0 哈希 8b9d7e5095b53646）。
 - 提取脚本留在组件目录之外（`generated/_scratch/extract_pet_from_clip.py`），包内只保留最终 PNG。
   （v1 首版曾用手绘哈基米风金毛占位，hash 05e02cc0e0eb9afc，被本版替代。）
+- image 节点声明 `motion: "float"`：渲染器驱动的上下浮动动效，无需设备 tick（host 组件禁 tick）。
+- v3 高清字形：surface.typography="p4-app-type-v1" + fonts 两个图集——digits（"0123456789:"，
+  cell [48,64]，Noto Sans SC Bold 64px 渲染，192×192）与 cjk32（"年月日晴多云阴雾雨雪阵雷等待数据℃—"，
+  cell [32,32]，32px，192×96）；图集像素预算 95296/98304；"." 与 "-" 走内置字库回退；
+  字体授权声明在 `licenses/noto-sans-sc-OFL.txt`（Noto Sans CJK 与思源黑体同源，SIL OFL 1.1）。
+  构建脚本 `generated/_scratch/build_atlas.py`。hash 64f21ec1a6078572。
 
 ### S2.5 展示降级与诚实边界
 
