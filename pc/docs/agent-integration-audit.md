@@ -12,6 +12,7 @@
 
 | DeepSeek Harness | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | 无需输入配对码；需在 DeepSeek 打开目标对话；输入不可用或目标不唯一时停止 |
 | Prism | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | prism-agent 使用同一桥接协议与独立 descriptor 目录（`~/.claw-pet/prism-bridge/`）；设备气泡选择会通过桥接切换其桌面对话，不抢占窗口焦点 |
+| ZCode | 本地日志事件（turn/tool/model 生命周期）及独立会话显示 | macOS / Windows 可见输入框 | 状态来自 ZCode 桌面/CLI 的本地日志与会话存储；不含回复正文与 token 统计，无语音预览气泡；语音瞄准 ZCode 桌面 App 当前可见输入框，设备气泡选择只改跟随目标、不切换其桌面对话（`zcode://` 语义未验证，不做深链定位）；macOS 语音路径未实机验收 |
 
 ## 输入与确认
 
@@ -19,7 +20,7 @@
 
 录音固定本次目标。编辑器不可用、目标变化、写入或提交结果未知时，本次操作停止，不自动重放，也不改用最近历史会话。下一次新录音独立处理。界面读到的占位提示不属于用户输入。
 
-WorkBuddy 与 DeepSeek 的设备气泡选择不会切换其桌面对话；请先在应用中打开目标对话。Prism 的设备气泡选择会通过其桥接插件切换桌面对话（prism-agent 桥接协议 v2 之上新增的 `/sessions/activate` 能力）。MiMoCode Windows 的语音尚未实现，设备实时对话属于另一条能力路径。详见 [WorkBuddy](workbuddy.md)、[DSH](../../integrations/dsh-hachimodock/README.md)。
+WorkBuddy、DeepSeek 与 ZCode 的设备气泡选择不会切换其桌面对话；请先在应用中打开目标对话。Prism 的设备气泡选择会通过其桥接插件切换桌面对话（prism-agent 桥接协议 v2 之上新增的 `/sessions/activate` 能力）。MiMoCode Windows 的语音尚未实现，设备实时对话属于另一条能力路径。详见 [WorkBuddy](workbuddy.md)、[DSH](../../integrations/dsh-hachimodock/README.md)。
 
 ## 权限边界
 

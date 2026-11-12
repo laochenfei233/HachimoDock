@@ -318,7 +318,7 @@ class AgentSessionBus {
           }
           return session;
         });
-        if (agentId === "claude-code" || agentId === "codex" || agentId === "mimocode" || agentId === "workbuddy") {
+        if (agentId === "claude-code" || agentId === "codex" || agentId === "mimocode" || agentId === "workbuddy" || agentId === "zcode") {
           for (const status of Array.isArray(statuses) ? statuses : []) {
             const id = normalizeStatusId(status?.id);
             if (!id || seen.has(id)) continue;

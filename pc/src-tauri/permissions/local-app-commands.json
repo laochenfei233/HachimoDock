@@ -149,7 +149,8 @@
           "purge_clawpkg_sync_cache",
           "dsh_connection_status",
           "connect_dsh_desktop",
-          "dsh_pair_session"
+          "dsh_pair_session",
+          "prism_activate_session"
         ]
       }
     }

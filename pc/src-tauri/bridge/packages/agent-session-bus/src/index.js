@@ -11,6 +11,7 @@ const { MiMoCodeAdapter } = require("./adapters/mimocode");
 const { WorkBuddyAdapter } = require("./adapters/workbuddy");
 const { DshAdapter } = require("./adapters/dsh");
 const { PrismAdapter } = require("./adapters/prism");
+const { ZcodeAdapter } = require("./adapters/zcode");
 const { defaultLog } = require("./log");
 const { readPort } = require("./env");
 
@@ -60,4 +61,5 @@ module.exports = {
   WorkBuddyAdapter,
   DshAdapter,
   PrismAdapter,
+  ZcodeAdapter,
 };

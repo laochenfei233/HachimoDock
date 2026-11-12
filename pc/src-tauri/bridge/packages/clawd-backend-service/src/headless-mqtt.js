@@ -34,7 +34,7 @@ const SPEECH_EXPIRES_MS = 30000;
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const STATUS_VALUES = new Set(["idle", "working", "speaking", "done", "reply_complete", "error", "waiting_user"]);
 const LEGACY_WORKING_STATUS_VALUES = new Set(["thinking", "tool_running"]);
-const KNOWN_AGENT_SOURCES = ["codex", "claude-code", "openclaw", "mimocode", "workbuddy"];
+const KNOWN_AGENT_SOURCES = ["codex", "claude-code", "openclaw", "mimocode", "workbuddy", "zcode"];
 
 function requireOptional(name) {
   try {
@@ -2074,6 +2074,65 @@ function startClaudeLogMonitor(config) {
   };
 }
 
+function startZCodeMonitor(config) {
+  let monitor = null;
+  // ZCode logs contain no assistant body and no token usage, so there is no
+  // speech publishing and no display/messages/dailyTokenUsage payload — the
+  // missing information is never dressed up as a complete reply.
+  const zcodeEvents = new Set([
+    "turn.started",
+    "model.request.started",
+    "tool.call.started",
+    "ttft.model.first_content",
+    "turn.completed",
+    "turn.failed",
+    "model.request.failed",
+  ]);
+  try {
+    monitor = startAgentLogMonitorWorker("zcode", (sessionId, state, event, extra) => {
+      if (!zcodeEvents.has(event)) return;
+      const normalized = mapCodexStateToStatus(state, event, extra?.turn?.completedWork);
+
+      const out = {
+        source: "zcode",
+        channel: "zcode-log",
+        bridge: APP_NAME,
+        bridgeVersion: APP_VERSION,
+        state: normalized,
+        rawState: state,
+        reason: `zcode.${event || state}`,
+        event: event || undefined,
+        sessionId,
+        sessionTitle: extra && typeof extra.sessionTitle === "string" ? extra.sessionTitle : undefined,
+        cwd: extra && typeof extra.cwd === "string" ? extra.cwd : undefined,
+        session: extra && extra.session && typeof extra.session === "object" ? extra.session : undefined,
+        turn: extra && extra.turn && typeof extra.turn === "object" ? extra.turn : undefined,
+        taskCorrelation: extra && extra.taskCorrelation,
+        ts: nowIso(),
+        tsMs: Date.now(),
+      };
+
+      const enriched = enrichPayloadMetrics(config.metricsTracker, out);
+      // A reply ends the turn in the session bus, but the P4 transport only
+      // receives a completion state when that turn has evidence of task work.
+      const deviceState = enriched.state === "reply_complete" ? "idle" : enriched.state;
+      config.publisher.publishSource({ ...enriched, state: deviceState });
+    });
+
+    log("info", "zcode log monitor worker started", {});
+  } catch (error) {
+    log("warn", "zcode log monitor not started", { error: String(error.message || error) });
+  }
+
+  return {
+    stop() {
+      if (!monitor) return;
+      try { monitor.stop(); } catch {}
+      monitor = null;
+    },
+  };
+}
+
 function resolveConfig() {
   const defaultDeviceId = normalizeTopicPart(os.hostname().toLowerCase(), "devbox");
   const stateDirFallback = path.join(os.homedir(), ".status-bridge");
@@ -2108,6 +2167,9 @@ function resolveConfig() {
     },
     claude: {
       enabledLogMonitor: getEnvBool("CLAWD_ENABLE_CLAUDE_LOG_MONITOR", true),
+    },
+    zcode: {
+      enabled: getEnvBool("CLAWD_ENABLE_ZCODE_MONITOR", true),
     },
     openclaw: {
       enabled: getEnvBool("OPENCLAW_ENABLE", true),
@@ -2369,6 +2431,9 @@ async function main() {
   const claudeLogMonitor = config.claude.enabledLogMonitor
     ? startClaudeLogMonitor({ publisher, metricsTracker, includeRaw: config.includeRaw })
     : { stop() {} };
+  const zcodeMonitor = config.zcode.enabled
+    ? startZCodeMonitor({ publisher, metricsTracker, includeRaw: config.includeRaw })
+    : { stop() {} };
 
   let openclawStatus = null;
   let openclawBridge = null;
@@ -2411,6 +2476,7 @@ async function main() {
       WorkBuddyAdapter,
       DshAdapter,
       PrismAdapter,
+      ZcodeAdapter,
     } = busModule;
     const busLog = (level, message, details) => log(level, `bus :: ${message}`, details);
     const adapters = [
@@ -2421,6 +2487,7 @@ async function main() {
       new WorkBuddyAdapter({ log: busLog }),
       new DshAdapter({ log: busLog }),
       new PrismAdapter({ log: busLog }),
+      new ZcodeAdapter({ log: busLog }),
     ];
     agentBus = createAgentSessionBus({
       adapters,
@@ -2460,6 +2527,7 @@ async function main() {
     if (openclawStatus) openclawStatus.stop();
     codexMonitor.stop();
     claudeLogMonitor.stop();
+    zcodeMonitor.stop();
     server.stop();
     publisher.stop();
     setTimeout(() => process.exit(0), 50).unref?.();
@@ -2476,6 +2544,7 @@ async function main() {
     version: APP_VERSION,
     codexMonitor: config.codex.enabled,
     claudeLogMonitor: config.claude.enabledLogMonitor,
+    zcodeMonitor: config.zcode.enabled,
     openclawEnabled: config.openclaw.enabled,
     mimocodeEnabled: config.mimocode.enabled,
     workbuddyEnabled: config.workbuddy.enabled,

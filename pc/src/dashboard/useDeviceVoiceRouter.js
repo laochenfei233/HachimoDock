@@ -301,7 +301,7 @@ export function deviceVoiceRouterReducer(state, action) {
 }
 
 export function transcriptMessage(payload, phase, composerMode) {
-  const visibleAgentLabel = normalizeText(payload?.agentId).toLowerCase() === "deepseek-harness" ? "DeepSeek Harness" : normalizeText(payload?.agentId).toLowerCase() === "prism-agent" ? "Prism" : normalizeText(payload?.agentId).toLowerCase() === "workbuddy" ? "WorkBuddy" : normalizeText(payload?.agentId).toLowerCase() === "claude-code"
+  const visibleAgentLabel = normalizeText(payload?.agentId).toLowerCase() === "deepseek-harness" ? "DeepSeek Harness" : normalizeText(payload?.agentId).toLowerCase() === "prism-agent" ? "Prism" : normalizeText(payload?.agentId).toLowerCase() === "workbuddy" ? "WorkBuddy" : normalizeText(payload?.agentId).toLowerCase() === "zcode" ? "ZCode" : normalizeText(payload?.agentId).toLowerCase() === "claude-code"
     ? "Claude"
     : "ChatGPT（Codex）";
   if (phase === "listening") {

@@ -118,7 +118,7 @@ test("both platforms append live drafts without waiting for old receipts", () =>
 test("WorkBuddy snapshots share the safe task protocol but keep native adapters isolated", () => {
   const windows = rust("codex_composer.rs");
   const snapshot = windows.split("function Get-TaskDraftSnapshot")[1].split("function Test-CodexSubmitPoint")[0];
-  assert.match(snapshot, /@\('codex','workbuddy','deepseek-harness'\) -notcontains \$state.Agent/);
+  assert.match(snapshot, /@\('codex','workbuddy','deepseek-harness','zcode'\) -notcontains \$state.Agent/);
   assert.match(snapshot, /agent = \$state.Agent/);
   assert.match(snapshot, /@\('agent','processId'/);
   const dispatch = windows.split("'dispatch' {")[1].split("'release' {")[0];
@@ -133,7 +133,7 @@ test("WorkBuddy snapshots share the safe task protocol but keep native adapters 
   assert.match(macSnapshot, /MacosAgent::Codex \| MacosAgent::WorkBuddy/);
   assert.match(macSnapshot, /"agent":state.agent.label\(\)/);
   const writer = mac.split("fn replace_composer_text(")[1].split("pub(super) fn begin_voice")[0];
-  assert.match(writer, /target.agent == MacosAgent::WorkBuddy/);
+  assert.match(writer, /matches!\(target\.agent, MacosAgent::WorkBuddy \| MacosAgent::Zcode\)/);
   assert.match(writer, /select_workbuddy_draft/);
   assert.match(writer, /snapshot.restore\(\)/);
 });

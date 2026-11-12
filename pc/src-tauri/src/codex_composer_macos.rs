@@ -1,5 +1,5 @@
 /*
- * [Input] A unique or current-visible ChatGPT（Codex）/Claude task, a pinned WorkBuddy composer, or a captured MiMoCode terminal caret, plus staged device speech and a later explicit Confirm action.
+ * [Input] A unique or current-visible ChatGPT（Codex）/Claude task, a pinned WorkBuddy or current-visible ZCode composer, or a captured MiMoCode terminal caret, plus staged device speech and a later explicit Confirm action.
  * [Output] Read-only active-Agent detection, native consent with activation-ordered Accessibility-pane routing,
  *          activation-gated Chromium AX priming, AX-only stable/rebindable
  *          exact-session per-recording draft append with original-prefix preservation, including
@@ -122,16 +122,18 @@ pub(super) enum MacosAgent {
     Claude,
     WorkBuddy,
     DeepSeekHarness,
+    Zcode,
 }
 
 impl MacosAgent {
-    fn current_electron(self) -> bool { matches!(self, Self::WorkBuddy | Self::DeepSeekHarness) }
+    fn current_electron(self) -> bool { matches!(self, Self::WorkBuddy | Self::DeepSeekHarness | Self::Zcode) }
     fn label(self) -> &'static str {
         match self {
             Self::Codex => "ChatGPT（Codex）",
             Self::Claude => "Claude",
             Self::WorkBuddy => "WorkBuddy",
             Self::DeepSeekHarness => "DeepSeek Harness",
+            Self::Zcode => "ZCode",
         }
     }
 }
@@ -147,6 +149,19 @@ pub(super) fn activate_agent(agent: MacosAgent) {
         for application in applications.iter() {
             let _ = application.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
             return;
+        }
+    }
+    // Name-matched agents without a bundle identifier activate through their
+    // name-matched PIDs instead.
+    if agent_bundle_identifiers(agent).is_empty() {
+        for pid in agent_application_pids(agent) {
+            if let Some(application) =
+                NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+            {
+                let _ = application
+                    .activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
+                return;
+            }
         }
     }
 }
@@ -175,6 +190,9 @@ fn agent_bundle_identifiers(agent: MacosAgent) -> &'static [&'static str] {
         MacosAgent::Claude => &["com.anthropic.claudefordesktop", "com.anthropic.claude"],
         MacosAgent::WorkBuddy => &["com.tencent.workbuddy.mac"],
         MacosAgent::DeepSeekHarness => &["com.deepseek.dsh"],
+        // ZCode's bundle identifier is deliberately not invented here; it is
+        // matched by application name only (see agent_application_pids).
+        MacosAgent::Zcode => &[],
     }
 }
 
@@ -184,6 +202,7 @@ fn agent_application_names(agent: MacosAgent) -> &'static [&'static str] {
         MacosAgent::Claude => &["Claude"],
         MacosAgent::WorkBuddy => &["WorkBuddy"],
         MacosAgent::DeepSeekHarness => &["DeepSeek Harness"],
+        MacosAgent::Zcode => &["ZCode"],
     }
 }
 
@@ -1291,6 +1310,7 @@ fn is_agent_primary_window_title(agent: MacosAgent, title: &str) -> bool {
         MacosAgent::Claude => title == "claude",
         MacosAgent::WorkBuddy => title == "workbuddy",
         MacosAgent::DeepSeekHarness => title == "deepseek harness",
+        MacosAgent::Zcode => title == "zcode",
     }
 }
 
@@ -2742,8 +2762,8 @@ fn replace_composer_text(target: &ComposerTarget, text: &str) -> Result<(), Stri
     }
     if target.agent == MacosAgent::DeepSeekHarness {
         replace_current_electron_without_clipboard(target, &text)?;
-    } else if target.agent == MacosAgent::WorkBuddy {
-        // Its rich-text editor can expose writable AXValue while bypassing the
+    } else if matches!(target.agent, MacosAgent::WorkBuddy | MacosAgent::Zcode) {
+        // Their rich-text editors can expose writable AXValue while bypassing the
         // editor's input events. Use a guarded native paste, never mutate AXValue.
         let mut snapshot = PasteboardSnapshot::capture()?;
         let result = (|| {
@@ -2752,7 +2772,10 @@ fn replace_composer_text(target: &ComposerTarget, text: &str) -> Result<(), Stri
                     || ax_element_attribute(&target.app, "AXFocusedUIElement").as_ref() != Some(&target.composer)
                     || composer_value(&target.composer) != target.value
                 {
-                    return Err("WorkBuddy 焦点或草稿已变化，已停止写入".into());
+                    return Err(format!(
+                        "{} 焦点或草稿已变化，已停止写入",
+                        target.agent.label()
+                    ));
                 }
                 Ok(())
             };
@@ -2804,8 +2827,8 @@ fn replace_composer_text(target: &ComposerTarget, text: &str) -> Result<(), Stri
                         .ok().and_then(|value: CFType| value.downcast::<CFNumber>()).and_then(|value| value.to_i64());
                     let clip = |text: &str| text.chars().take(40).collect::<String>();
                     return Err(format!(
-                        "WorkBuddy 未确认选中输入框原文，本次语音未粘贴，请重新长按（原文 {:?}，AX 值 {:?}，字符数 {:?}，选中 {:?}）",
-                        clip(&target.value), clip(&raw), characters, selected.as_deref().map(clip)
+                        "{} 未确认选中输入框原文，本次语音未粘贴，请重新长按（原文 {:?}，AX 值 {:?}，字符数 {:?}，选中 {:?}）",
+                        target.agent.label(), clip(&target.value), clip(&raw), characters, selected.as_deref().map(clip)
                     ));
                 }
                 thread::sleep(Duration::from_millis(25));
@@ -2829,7 +2852,10 @@ fn replace_composer_text(target: &ComposerTarget, text: &str) -> Result<(), Stri
                 }
                 thread::sleep(Duration::from_millis(25));
             }
-            Err("WorkBuddy 未确认语音文字写入；已停止操作，请检查当前草稿".into())
+            Err(format!(
+                "{} 未确认语音文字写入；已停止操作，请检查当前草稿",
+                target.agent.label()
+            ))
         })();
         snapshot.restore();
         result?;
@@ -3700,7 +3726,7 @@ fn wait_for_submit_readback(
 }
 
 fn task_draft_snapshot(state: &MacosComposerState, target: &ComposerTarget) -> Result<serde_json::Value, String> {
-    if !matches!(state.agent, MacosAgent::Codex | MacosAgent::WorkBuddy | MacosAgent::DeepSeekHarness) || state.task_identity.is_none() {
+    if !matches!(state.agent, MacosAgent::Codex | MacosAgent::WorkBuddy | MacosAgent::DeepSeekHarness | MacosAgent::Zcode) || state.task_identity.is_none() {
         return Err("DESKTOP_TASK_TARGET_CHANGED".into());
     }
     let mut pid = 0;
@@ -3829,7 +3855,7 @@ pub(super) fn dispatch_task_from_draft(
 
 pub(super) fn dispatch_voice_task(state: &mut MacosComposerState, text: &str) -> Result<String, String> {
     let target = find_voice_target(state)?;
-    if !matches!(state.agent, MacosAgent::Codex|MacosAgent::WorkBuddy|MacosAgent::DeepSeekHarness) || !state.draft.base.is_empty() || !target.value.is_empty() {
+    if !matches!(state.agent, MacosAgent::Codex|MacosAgent::WorkBuddy|MacosAgent::DeepSeekHarness|MacosAgent::Zcode) || !state.draft.base.is_empty() || !target.value.is_empty() {
         return Err("DESKTOP_TASK_DRAFT_NOT_EMPTY".into());
     }
     update_voice(state, text)?;
@@ -4593,6 +4619,9 @@ mod tests {
         assert!(!should_recover_workbuddy_tree(MacosAgent::WorkBuddy, 0, true));
         assert!(!should_recover_workbuddy_tree(MacosAgent::WorkBuddy, 1, false));
         assert!(!should_recover_workbuddy_tree(MacosAgent::WorkBuddy, 2, false));
+        assert!(should_recover_workbuddy_tree(MacosAgent::Zcode, 0, false));
+        assert!(!should_recover_workbuddy_tree(MacosAgent::Zcode, 0, true));
+        assert!(!should_recover_workbuddy_tree(MacosAgent::Zcode, 1, false));
         assert!(!should_recover_workbuddy_tree(MacosAgent::Codex, 0, false));
         assert!(!should_recover_workbuddy_tree(MacosAgent::Claude, 0, false));
     }
@@ -4718,6 +4747,23 @@ mod tests {
             &["Codex", "ChatGPT"]
         );
         assert_eq!(agent_application_names(MacosAgent::Claude), &["Claude"]);
+    }
+
+    #[test]
+    fn zcode_identity_is_application_name_only_without_an_invented_bundle_id() {
+        // The bundle identifier is deliberately empty: ZCode is matched by
+        // application name (pgrep) and its exact window title only.
+        assert!(agent_bundle_identifiers(MacosAgent::Zcode).is_empty());
+        assert_eq!(agent_application_names(MacosAgent::Zcode), &["ZCode"]);
+        assert_eq!(MacosAgent::Zcode.label(), "ZCode");
+        assert!(MacosAgent::Zcode.current_electron());
+        assert!(is_agent_primary_window_title(MacosAgent::Zcode, "ZCode"));
+        assert!(!is_agent_primary_window_title(
+            MacosAgent::Zcode,
+            "ZCode Pet"
+        ));
+        // Like WorkBuddy, ZCode never uses an unverified session deep link.
+        assert!(session_deeplink(MacosAgent::Zcode, "id", "claude://code/id").is_err());
     }
 
     #[test]

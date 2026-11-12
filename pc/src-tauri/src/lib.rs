@@ -680,7 +680,7 @@ fn agent_uses_visible_composer(agent_id: &str) -> bool {
     /* DeepSeek Harness desktop voice is the OS accessibility composer adapter
      * (see integrations/dsh-hachimodock/README.md); the plugin voice endpoints
      * are a legacy ticket flow and do not register a desktop voice owner. */
-    matches!(agent_id, "codex" | "claude-code" | "workbuddy" | "deepseek-harness")
+    matches!(agent_id, "codex" | "claude-code" | "workbuddy" | "deepseek-harness" | "zcode")
 }
 
 fn agent_streams_voice_draft(agent_id: &str) -> bool {
@@ -702,6 +702,8 @@ fn visible_composer_agent_label(agent_id: &str) -> &'static str {
         "DeepSeek"
     } else if agent_id == "claude-code" {
         "Claude"
+    } else if agent_id == "zcode" {
+        "ZCode"
     } else {
         "ChatGPT（Codex）"
     }
@@ -1133,7 +1135,7 @@ fn should_use_current_visible_session(
     agent_id: &str,
 ) -> bool {
     agent_uses_visible_composer(agent_id)
-        && (agent_is_frontmost || session_queue_empty || matches!(agent_id, "workbuddy" | "codex" | "deepseek-harness"))
+        && (agent_is_frontmost || session_queue_empty || matches!(agent_id, "workbuddy" | "codex" | "deepseek-harness" | "zcode"))
 }
 
 fn voice_needs_current_composer(target: &P4SessionBinding, frontmost: bool, empty_queue: bool) -> bool {
@@ -1153,7 +1155,7 @@ fn device_voice_bound_target_is_addressable(
     session_queue_empty: bool,
     target: &P4SessionBinding,
 ) -> bool {
-    !matches!(target.agent_id.as_str(), "workbuddy" | "deepseek-harness")
+    !matches!(target.agent_id.as_str(), "workbuddy" | "deepseek-harness" | "zcode")
         && !session_queue_empty
         && !target.session_id.is_empty()
         && !target.session_title.is_empty()
@@ -2482,7 +2484,7 @@ fn continue_device_voice_context_start(context: Arc<DeviceVoiceContext>, agent_i
                 let start_bound = |callback: Arc<
                     dyn Fn(codex_composer::CodexComposerEvent) + Send + Sync,
                 >| {
-                    if matches!(startup_context.target.agent_id.as_str(), "workbuddy" | "deepseek-harness") {
+                    if matches!(startup_context.target.agent_id.as_str(), "workbuddy" | "deepseek-harness" | "zcode") {
                         Err(format!("请打开 {} 的目标对话后再开始语音输入", visible_composer_agent_label(&startup_context.target.agent_id)))
                     } else if startup_context.target.agent_id == "claude-code" {
                         codex_composer::CodexComposerBridge::start_claude(
@@ -3700,13 +3702,14 @@ const BRIDGE_LAUNCH_AGENT_LABEL: &str = "com.petmanager.status-bridge";
 const BRIDGE_WINDOWS_STARTUP_SCRIPT_NAME: &str = "Pet Manager Status Bridge.cmd";
 const USB_STATE_MAX_AGE_MS: u64 = 10 * 60 * 1000;
 const USB_BRIDGE_SCAN_MAX_FILES: usize = 64;
-const KNOWN_USB_STATE_SOURCES: [&str; 6] = [
+const KNOWN_USB_STATE_SOURCES: [&str; 7] = [
     "claude-code",
     "codex",
     "openclaw",
     "mimocode",
     "deepseek-harness",
     "workbuddy",
+    "zcode",
 ];
 #[cfg(windows)]
 const CREATE_NO_WINDOW_FLAG: u32 = 0x08000000;
@@ -7424,6 +7427,166 @@ fn find_prism_profile_dir(home: Option<&Path>) -> Option<PathBuf> {
     profile.is_dir().then_some(profile)
 }
 
+// ── ZCode ──
+
+#[cfg(target_os = "macos")]
+const ZCODE_APP_BUNDLE_NAME: &str = "ZCode.app";
+const ZCODE_BUNDLED_CLI_RELATIVE_PATH: &str = "resources/glm/zcode.cjs";
+#[cfg(windows)]
+const ZCODE_WINDOWS_INSTALL_DIR_NAME: &str = "ZCode";
+#[cfg(windows)]
+const ZCODE_WINDOWS_EXECUTABLE_NAME: &str = "ZCode.exe";
+
+/// Classify an already-probed ZCode install. The CLI only ships inside the
+/// desktop app install, so the app bundle gates the ready state; the
+/// `~/.zcode` activity paths only prove prior CLI usage.
+fn classify_zcode_detection(
+    label: &str,
+    app_path: Option<&Path>,
+    cli_path: Option<&Path>,
+    activity_path: Option<&Path>,
+) -> DshDetection {
+    let detected = app_path.is_some() || cli_path.is_some() || activity_path.is_some();
+    if !detected {
+        return DshDetection {
+            detected: false,
+            ready: false,
+            status: "not_found".to_string(),
+            detail: format!("未检测到 {label} 桌面应用或活动数据"),
+        };
+    }
+
+    let mut sources = Vec::new();
+    if let Some(path) = app_path {
+        sources.push(format!("应用 {}", path.display()));
+    }
+    if let Some(path) = cli_path {
+        sources.push(format!("CLI {}", path.display()));
+    }
+    if let Some(path) = activity_path {
+        sources.push(format!("活动数据 {}", path.display()));
+    }
+
+    match app_path {
+        Some(_) => DshDetection {
+            detected: true,
+            ready: true,
+            status: "ready".to_string(),
+            detail: format!("已安装 {label} 桌面应用（{}）", sources.join("；")),
+        },
+        None => DshDetection {
+            detected: true,
+            ready: false,
+            status: "needs_setup".to_string(),
+            detail: format!(
+                "已检测到 {label} 活动数据（{}），未找到 {label} 桌面应用",
+                sources.join("；")
+            ),
+        },
+    }
+}
+
+fn find_zcode_app_install(home: Option<&Path>) -> Option<PathBuf> {
+    #[cfg(not(target_os = "macos"))]
+    let _ = home;
+
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in macos_app_bundle_candidates(home, &[ZCODE_APP_BUNDLE_NAME], &[]) {
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let mut candidates = Vec::new();
+        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            push_unique_path(
+                &mut candidates,
+                PathBuf::from(local_app_data)
+                    .join("Programs")
+                    .join(ZCODE_WINDOWS_INSTALL_DIR_NAME)
+                    .join(ZCODE_WINDOWS_EXECUTABLE_NAME),
+            );
+        }
+        if let Some(program_files) = env::var_os("ProgramFiles") {
+            push_unique_path(
+                &mut candidates,
+                PathBuf::from(program_files)
+                    .join(ZCODE_WINDOWS_INSTALL_DIR_NAME)
+                    .join(ZCODE_WINDOWS_EXECUTABLE_NAME),
+            );
+        }
+        for candidate in candidates {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+/// The ZCode CLI only ships inside the desktop app install directory
+/// (`resources/glm/zcode.cjs`); there is no standalone install layout to
+/// probe on PATH.
+fn find_zcode_cli(app_path: Option<&Path>) -> Option<PathBuf> {
+    let app_path = app_path?;
+    let bundled = ZCODE_BUNDLED_CLI_RELATIVE_PATH
+        .split('/')
+        .fold(app_path.to_path_buf(), |path, segment| path.join(segment));
+    bundled.is_file().then_some(bundled)
+}
+
+/// ZCode keeps its CLI state under `~/.zcode`: `cli/db/db.sqlite` holds the
+/// session history and the `cli/log` directory proves the CLI has run.
+fn find_zcode_activity_path(home: Option<&Path>) -> Option<PathBuf> {
+    let home = home?;
+    let db_path = home.join(".zcode").join("cli").join("db").join("db.sqlite");
+    if db_path.is_file() {
+        return Some(db_path);
+    }
+    let log_dir = home.join(".zcode").join("cli").join("log");
+    log_dir.is_dir().then_some(log_dir)
+}
+
+fn detect_zcode() -> DetectedAgent {
+    detect_zcode_with_home(get_home_dir().ok().as_deref())
+}
+
+fn detect_zcode_with_home(home: Option<&Path>) -> DetectedAgent {
+    let app_path = find_zcode_app_install(home);
+    let cli_path = find_zcode_cli(app_path.as_deref());
+    let activity_path = find_zcode_activity_path(home);
+    let detection = classify_zcode_detection(
+        "ZCode",
+        app_path.as_deref(),
+        cli_path.as_deref(),
+        activity_path.as_deref(),
+    );
+
+    DetectedAgent {
+        id: "zcode".to_string(),
+        label: "ZCode".to_string(),
+        detected: detection.detected,
+        ready: detection.ready,
+        status: detection.status,
+        detail: detection.detail,
+        command_path: cli_path
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        config_path: String::new(),
+        activity_path: activity_path
+            .as_deref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        can_sync_hook: false,
+    }
+}
+
 fn detect_local_agents_inner() -> Result<AgentDiscoveryResponse, String> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -7437,6 +7600,7 @@ fn detect_local_agents_inner() -> Result<AgentDiscoveryResponse, String> {
         detect_mimocode(),
         detect_dsh(),
         detect_prism(),
+        detect_zcode(),
         detect_workbuddy(),
     ];
 
@@ -10779,6 +10943,7 @@ fn usb_source_display_name(source: &str) -> String {
         "mimo" | "mimo-code" | "mimocode" => "MiMoCode".to_string(),
         "deepseek-harness" | "deepseek" | "dsh" => "DeepSeek Harness".to_string(),
         "workbuddy" | "work-buddy" => "WorkBuddy".to_string(),
+        "zcode" => "ZCode".to_string(),
         other if !other.is_empty() => other.to_string(),
         _ => "桌宠".to_string(),
     }
@@ -14199,6 +14364,68 @@ mod tests {
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(detect_prism_with_home(Some(empty.path())).id, "prism-agent");
         assert!(!detect_prism_with_home(Some(empty.path())).detected);
+    }
+
+    #[test]
+    fn zcode_detection_classifies_present_install() {
+        let detection = classify_zcode_detection(
+            "ZCode",
+            Some(Path::new("ZCode.app")),
+            Some(Path::new("ZCode.app/resources/glm/zcode.cjs")),
+            Some(Path::new("home/.zcode/cli/db/db.sqlite")),
+        );
+        assert!(detection.detected);
+        assert!(detection.ready);
+        assert_eq!(detection.status, "ready");
+        assert!(detection.detail.contains("已安装 ZCode 桌面应用"));
+        assert!(detection.detail.contains("应用 ZCode.app"));
+        assert!(detection.detail.contains("zcode.cjs"));
+        assert!(detection.detail.contains("活动数据"));
+    }
+
+    #[test]
+    fn zcode_detection_classifies_absent_install() {
+        let detection = classify_zcode_detection("ZCode", None, None, None);
+        assert!(!detection.detected);
+        assert!(!detection.ready);
+        assert_eq!(detection.status, "not_found");
+        assert!(detection.detail.contains("未检测到 ZCode"));
+    }
+
+    #[test]
+    fn zcode_detection_treats_activity_data_without_app_as_needs_setup() {
+        // Only `~/.zcode` evidence (db.sqlite, or the cli log dir) and no app
+        // bundle: the install counts as detected but stays unready because the
+        // desktop app gates the ready state.
+        let home = tempfile::tempdir().unwrap();
+        let db_path = home
+            .path()
+            .join(".zcode")
+            .join("cli")
+            .join("db")
+            .join("db.sqlite");
+        fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        fs::write(&db_path, b"").unwrap();
+        let detected = detect_zcode_with_home(Some(home.path()));
+        assert_eq!(detected.id, "zcode");
+        assert_eq!(detected.label, "ZCode");
+        assert!(detected.detected);
+        assert!(!detected.ready);
+        assert_eq!(detected.status, "needs_setup");
+        assert!(!detected.can_sync_hook);
+        assert_eq!(detected.activity_path, db_path.to_string_lossy().into_owned());
+
+        let log_home = tempfile::tempdir().unwrap();
+        let log_dir = log_home.path().join(".zcode").join("cli").join("log");
+        fs::create_dir_all(&log_dir).unwrap();
+        let log_only = detect_zcode_with_home(Some(log_home.path()));
+        assert!(log_only.detected);
+        assert!(!log_only.ready);
+        assert_eq!(log_only.activity_path, log_dir.to_string_lossy().into_owned());
+
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(detect_zcode_with_home(Some(empty.path())).id, "zcode");
+        assert!(!detect_zcode_with_home(Some(empty.path())).detected);
     }
 
     #[test]
