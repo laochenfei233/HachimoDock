@@ -1,5 +1,5 @@
 /*
- * [Input] A bound or current-visible ChatGPT（Codex）/Claude session, a current-visible WorkBuddy/DeepSeek Harness composer, or a captured MiMoCode terminal caret, plus staged voice text and an explicit confirm action.
+ * [Input] A bound or current-visible ChatGPT（Codex）/Claude session, a current-visible WorkBuddy/DeepSeek Harness/ZCode composer, or a captured MiMoCode terminal caret, plus staged voice text and an explicit confirm action.
  * [Output] Read-only frontmost-Agent detection, exact desktop-session navigation, bounded composer lookup, per-recording appended draft updates, and explicit-confirm submission without automatic send on ASR finalization.
  * [Pos] Cross-platform foreground input bridge with session, draft, clipboard, stale-focus recovery, Windows minimized-Claude restoration, and runtime-compatible UIA pattern lookup.
  * [Sync] If this file changes, update pc/.folder.md.
@@ -27,6 +27,7 @@ pub fn diagnose_current_composer(agent_id: &str) -> Result<Value, String> {
             "claude-code" => macos::MacosAgent::Claude,
             "workbuddy" => macos::MacosAgent::WorkBuddy,
             "deepseek-harness" => macos::MacosAgent::DeepSeekHarness,
+            "zcode" => macos::MacosAgent::Zcode,
             _ => return Err("此 Agent 不支持 macOS 输入框定位检查".into()),
         };
         macos::diagnose_current_composer(agent)
@@ -65,6 +66,7 @@ fn composer_startup_timeout_message(agent: &str, stage: &str) -> String {
     let label = match agent {
         "workbuddy" => "WorkBuddy",
         "deepseek-harness" => "DeepSeek Harness",
+        "zcode" => "ZCode",
         "claude" | "claude-code" => "Claude",
         "codex" => "ChatGPT（Codex）",
         _ => "Agent",
@@ -577,9 +579,9 @@ impl CodexComposerBridge {
         Self::start_current_task_for("codex")
     }
     pub fn start_current_task_for(agent_id: &str) -> Result<Self, String> {
-        if !matches!(agent_id,"codex"|"workbuddy"|"deepseek-harness") {return Err("Unsupported desktop task adapter".into());}
+        if !matches!(agent_id,"codex"|"workbuddy"|"deepseek-harness"|"zcode") {return Err("Unsupported desktop task adapter".into());}
         #[cfg(target_os = "macos")]
-        let agent = match agent_id { "workbuddy" => macos::MacosAgent::WorkBuddy, "deepseek-harness" => macos::MacosAgent::DeepSeekHarness, _ => macos::MacosAgent::Codex };
+        let agent = match agent_id { "workbuddy" => macos::MacosAgent::WorkBuddy, "deepseek-harness" => macos::MacosAgent::DeepSeekHarness, "zcode" => macos::MacosAgent::Zcode, _ => macos::MacosAgent::Codex };
         #[cfg(windows)]
         let agent = agent_id;
         Self::start_with_purpose(agent, "", "", "", "", "current_task", |_| {})
@@ -755,6 +757,7 @@ impl CodexComposerBridge {
             "claude-code" => &["claude.exe"],
             "workbuddy" => &["workbuddy.exe"],
             "deepseek-harness" => &["deepseek harness.exe"],
+            "zcode" => &["zcode.exe"],
             _ => return false,
         };
         unsafe {
@@ -799,9 +802,10 @@ impl CodexComposerBridge {
             "claude-code" => "claude",
             "workbuddy" => "workbuddy",
             "deepseek-harness" => "deepseek-harness",
+            "zcode" => "zcode",
             _ => {
                 return Err(
-                    "Current visible composer requires ChatGPT（Codex）, Claude, WorkBuddy or DeepSeek Harness".to_string(),
+                    "Current visible composer requires ChatGPT（Codex）, Claude, WorkBuddy, DeepSeek Harness or ZCode".to_string(),
                 )
             }
         };
@@ -813,7 +817,7 @@ impl CodexComposerBridge {
         callback: impl Fn(CodexComposerEvent) + Send + Sync + 'static,
     ) -> Result<RetainedComposerStartup, ComposerNoWriterError> {
         let agent=match agent_id.trim() {
-            "codex"=>"codex", "claude-code"=>"claude", "workbuddy"=>"workbuddy", "deepseek-harness"=>"deepseek-harness",
+            "codex"=>"codex", "claude-code"=>"claude", "workbuddy"=>"workbuddy", "deepseek-harness"=>"deepseek-harness", "zcode"=>"zcode",
             _=>return Err("Unsupported current visible composer".to_string().into()),
         };
         Self::start_with_purpose_retained(agent,"","","","","current_voice",callback)
@@ -949,11 +953,14 @@ impl CodexComposerBridge {
         let session_id = session_id.trim();
         let deep_link = deep_link.trim();
         let session_title = session_title.trim();
-        if !matches!(agent, "codex" | "claude" | "workbuddy" | "deepseek-harness") {
+        if !matches!(
+            agent,
+            "codex" | "claude" | "workbuddy" | "deepseek-harness" | "zcode"
+        ) {
             return Err("visible composer agent is invalid".to_string().into());
         }
         let current_visible = matches!(purpose, "current_voice" | "current_task");
-        if matches!(agent, "workbuddy" | "deepseek-harness") && !current_visible {
+        if matches!(agent, "workbuddy" | "deepseek-harness" | "zcode") && !current_visible {
             return Err("WorkBuddy 仅向当前可见对话输入，不回退到其他 Agent".into());
         }
         if !current_visible
@@ -3066,7 +3073,7 @@ function Get-NativeVoiceConversationAnchor($root, [string]$agent) {
       $isSelected = (Get-ComposerProperty $element 30079)
       if ($available -isnot [bool] -or -not $available -or $isSelected -isnot [bool] -or -not $isSelected) { continue }
       $name = Normalize-Label ([string]$element.Current.Name)
-      if ($name.Length -lt 2 -or @('chatgpt','codex','workbuddy','deepseek harness','claude') -contains $name.ToLowerInvariant()) { continue }
+      if ($name.Length -lt 2 -or @('chatgpt','codex','workbuddy','deepseek harness','claude','zcode') -contains $name.ToLowerInvariant()) { continue }
       if (-not @($titles | Where-Object { $_ -ceq $name }).Count) { continue }
       $id = Get-ElementRuntimeId $element
       if ($id) { $selected[$id] = @{ Element=$element; RuntimeId=$id; Name=$name } }
@@ -3624,12 +3631,12 @@ function Initialize-WorkBuddyAccessibility([IntPtr]$handle, [int]$ownerProcessId
 }
 
 function Test-CurrentElectronAgent([string]$agent) {
-  return @('workbuddy','deepseek-harness') -contains $agent -or ($agent -eq 'codex' -and $script:NativeVoiceAppendOnly)
+  return @('workbuddy','deepseek-harness','zcode') -contains $agent -or ($agent -eq 'codex' -and $script:NativeVoiceAppendOnly)
 }
 
 function Get-WorkBuddyTarget([string[]]$allowedValues, [string]$agent = 'workbuddy') {
   Write-ComposerProgress 'resolve_window'
-  $processName = if ($agent -eq 'deepseek-harness') { 'DeepSeek Harness' } elseif ($agent -eq 'codex') { 'ChatGPT' } else { 'WorkBuddy' }
+  $processName = if ($agent -eq 'deepseek-harness') { 'DeepSeek Harness' } elseif ($agent -eq 'zcode') { 'ZCode' } elseif ($agent -eq 'codex') { 'ChatGPT' } else { 'WorkBuddy' }
   $processNames = if ($agent -eq 'codex') { @('ChatGPT','Codex') } else { @($processName) }
   $windows = @(Get-Process -Name $processNames -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
   if ($agent -eq 'codex' -and $windows.Count -gt 1) { $windows = @($windows | Where-Object { [CodexVoiceNative]::IsForeground([IntPtr]$_.MainWindowHandle) }) }
@@ -3828,7 +3835,7 @@ function Test-SpecificComposerIdentity([string]$identity) {
   if ($parts.Count -gt 1) { return $true }
   if ($parts.Count -ne 1) { return $false }
   # A process/application title alone cannot authorize a different UIA editor.
-  return @('chatgpt','codex','workbuddy','deepseek harness','claude') -notcontains $parts[0].Trim().ToLowerInvariant()
+  return @('chatgpt','codex','workbuddy','deepseek harness','claude','zcode') -notcontains $parts[0].Trim().ToLowerInvariant()
 }
 
 function Get-BoundComposerRoot($state, [bool]$forReacquire = $false) {
@@ -4146,7 +4153,7 @@ function Get-ComposerSubmitLabelScore([string]$value) {
 }
 
 function Get-TaskDraftSnapshot($state) {
-  if ($null -eq $state -or -not $state.CurrentTask -or @('codex','workbuddy','deepseek-harness') -notcontains $state.Agent) {
+  if ($null -eq $state -or -not $state.CurrentTask -or @('codex','workbuddy','deepseek-harness','zcode') -notcontains $state.Agent) {
     throw 'DESKTOP_TASK_TARGET_CHANGED'
   }
   # Edits made between voice requests are intentional. Pin the current value
@@ -4477,7 +4484,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         break
       }
       'dispatch' {
-        if ($null -eq $state -or @('codex','workbuddy','deepseek-harness') -notcontains $state.Agent) { throw 'Desktop composer is not ready' }
+        if ($null -eq $state -or @('codex','workbuddy','deepseek-harness','zcode') -notcontains $state.Agent) { throw 'Desktop composer is not ready' }
         Assert-TargetCurrent $state $true
         if ($null -ne $command.draftSnapshot) {
           Assert-TaskDraftSnapshot $state $command.draftSnapshot
@@ -4834,6 +4841,7 @@ impl CodexComposerBridge {
             "claude-code" => macos::MacosAgent::Claude,
             "workbuddy" => macos::MacosAgent::WorkBuddy,
             "deepseek-harness" => macos::MacosAgent::DeepSeekHarness,
+            "zcode" => macos::MacosAgent::Zcode,
             _ => return false,
         };
         macos::agent_is_frontmost(agent)
@@ -4846,6 +4854,7 @@ impl CodexComposerBridge {
             "claude-code" => macos::MacosAgent::Claude,
             "workbuddy" => macos::MacosAgent::WorkBuddy,
             "deepseek-harness" => macos::MacosAgent::DeepSeekHarness,
+            "zcode" => macos::MacosAgent::Zcode,
             _ => return None,
         };
         Some(macos::AgentDiagnostics {
@@ -4865,6 +4874,7 @@ impl CodexComposerBridge {
             "claude-code" => macos::MacosAgent::Claude,
             "workbuddy" => macos::MacosAgent::WorkBuddy,
             "deepseek-harness" => macos::MacosAgent::DeepSeekHarness,
+            "zcode" => macos::MacosAgent::Zcode,
             _ => return false,
         };
         macos::activate_agent(agent);
@@ -4888,9 +4898,10 @@ impl CodexComposerBridge {
             "claude-code" => macos::MacosAgent::Claude,
             "workbuddy" => macos::MacosAgent::WorkBuddy,
             "deepseek-harness" => macos::MacosAgent::DeepSeekHarness,
+            "zcode" => macos::MacosAgent::Zcode,
             _ => {
                 return Err(
-                    "Current visible composer requires ChatGPT（Codex）, Claude, WorkBuddy or DeepSeek Harness".to_string(),
+                    "Current visible composer requires ChatGPT（Codex）, Claude, WorkBuddy, DeepSeek Harness or ZCode".to_string(),
                 )
             }
         };
@@ -4906,6 +4917,7 @@ impl CodexComposerBridge {
             "claude-code" => macos::MacosAgent::Claude,
             "workbuddy" => macos::MacosAgent::WorkBuddy,
             "deepseek-harness" => macos::MacosAgent::DeepSeekHarness,
+            "zcode" => macos::MacosAgent::Zcode,
             _ => return Err("Unsupported current visible composer".into()),
         };
         Self::start_with_purpose_retained(agent, "", "", "", "", "current_voice", callback)
@@ -5449,7 +5461,53 @@ mod tests {
         assert!(message.contains("读取当前聚焦输入框"));
         assert!(composer_startup_timeout_message("claude", "test").starts_with("Claude "));
         assert!(composer_startup_timeout_message("codex", "test").starts_with("ChatGPT（Codex）"));
+        assert!(composer_startup_timeout_message("zcode", "test").starts_with("ZCode "));
         assert!(composer_startup_timeout_message("unknown", "test").starts_with("Agent "));
+    }
+
+    #[test]
+    fn windows_current_visible_agent_tables_include_zcode() {
+        let source = include_str!("codex_composer.rs");
+        let script = source
+            .split("const SCRIPT: &str = r#\"")
+            .nth(1)
+            .expect("embedded Windows helper")
+            .split("\"#;")
+            .next()
+            .unwrap();
+        // Current-visible target discovery maps zcode to its ZCode process name.
+        assert!(script.contains("elseif ($agent -eq 'zcode') { 'ZCode' }"));
+        assert!(script.contains("@('workbuddy','deepseek-harness','zcode') -contains $agent"));
+        let snapshot = script
+            .split("function Get-TaskDraftSnapshot")
+            .nth(1)
+            .unwrap()
+            .split("function Assert-TaskDraftSnapshot")
+            .next()
+            .unwrap();
+        assert!(snapshot.contains(
+            "@('codex','workbuddy','deepseek-harness','zcode') -notcontains $state.Agent"
+        ));
+        let dispatch = script
+            .split("'dispatch' {")
+            .nth(1)
+            .unwrap()
+            .split("'release' {")
+            .next()
+            .unwrap();
+        assert!(dispatch.contains(
+            "@('codex','workbuddy','deepseek-harness','zcode') -notcontains $state.Agent"
+        ));
+        // Product-name exclusions never treat the app title as conversation identity.
+        assert_eq!(
+            script
+                .matches("@('chatgpt','codex','workbuddy','deepseek harness','claude','zcode')")
+                .count(),
+            2
+        );
+        // The Rust frontmost table and the macOS agent dispatch accept zcode.
+        assert!(source.contains("\"zcode\" => &[\"zcode.exe\"]"));
+        assert!(source.contains("\"zcode\" => macos::MacosAgent::Zcode"));
     }
 
     #[test]
