@@ -83,6 +83,7 @@ mod component_calendar;
 mod component_news;
 mod knowledge_narration;
 mod app_weather;
+mod aod_weather;
 mod shared_location;
 mod location_profile;
 mod component_app;
@@ -7805,6 +7806,32 @@ async fn usb_device_volume(
     .map_err(|_| "audio_volume_result_unknown_refresh_required: worker failed".to_string())?
 }
 
+/// Configure or trigger the device AOD screen-off island. Any uncertain result
+/// requires a fresh set; this command never replays a config on timeout.
+#[tauri::command]
+async fn usb_display_aod(
+    usb_manager: tauri::State<'_, usb_serial::UsbSerialManager>,
+    expected_board_device_id: String,
+    operation: String,
+    timeout_minutes: Option<u16>,
+    items: Option<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let manager = usb_manager.inner().clone();
+    let timeout = match operation.as_str() {
+        "set" => Some(timeout_minutes.unwrap_or(0)),
+        "enter" => None,
+        _ => return Err("invalid display aod operation".into()),
+    };
+    if timeout.is_none() && items.is_some() {
+        return Err("invalid display aod operation".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        manager.display_aod(&expected_board_device_id, timeout, items)
+    })
+    .await
+    .map_err(|_| "display_aod_result_unknown_refresh_required: worker failed".to_string())?
+}
+
 /// Remote-set the device's screen page (main | app). Forwards via USB serial
 /// as topic "control/screen-page" with {"page": "<value>"}. Used as both a
 /// recovery hatch (when widget OTA leaves the device stuck on app) and a
@@ -11851,6 +11878,7 @@ pub fn run() {
             usb_audio_capture_control,
             usb_get_status,
             usb_device_volume,
+            usb_display_aod,
             usb_set_screen_page,
             usb_activate_installed_widget,
             usb_get_background_programs,

@@ -65,6 +65,7 @@ mod connection_handle;
 mod live_audio_pacing;
 mod media_arbitration;
 mod master_volume;
+mod display_aod;
 use live_audio_pacing::write_serial_live_frame;
 #[cfg(windows)]
 mod windows_serial;
@@ -3052,6 +3053,9 @@ impl UsbSerialManager {
         if topic=="audio/volume" {
             master_volume::validate_write(conn,expected_board_device_id,expected_connection_id,payload)?;
         }
+        if topic=="display/aod" {
+            display_aod::validate_write(conn,expected_board_device_id,expected_connection_id,payload)?;
+        }
         // Suppress only the connection admitted above. A rejected stale bound
         // request must not suppress the current board/boot's autostart policy.
         // This RX-safe callback never reacquires the held connection mutex.
@@ -3086,6 +3090,12 @@ impl UsbSerialManager {
         if topic == "system/heartbeat" && conn.capabilities["widgetLocalTools"] == "p4-local-tools-v1" && payload.is_object() {
             let now=chrono::Local::now();
             payload["clock"]=serde_json::json!({"unixSeconds":now.timestamp(),"utcOffsetMinutes":now.offset().local_minus_utc()/60});
+        }
+        if topic == "system/heartbeat" && conn.capabilities["displayAod"] == display_aod::ENGINE && payload.is_object() {
+            // 灵动岛天气按需搭载;快照只加锁读,网络在 app_weather 后台线程。
+            if let Some(aod)=crate::aod_weather::heartbeat_snapshot() {
+                payload["aod"]=aod;
+            }
         }
         let msg = serde_json::json!({
             "topic": topic,
