@@ -42,7 +42,7 @@ test("Windows current-task lookup rejects ambiguous windows without using launch
   assert.equal((dispatch.match(/Invoke-SendButton/g) || []).length,1);
   assert.match(dispatch, /submission = \$submission/);
   assert.doesNotMatch(dispatch, /PressEnter|Start-Sleep|readbackDeadline/);
-  assert.match(source, /if \(\$state.Agent -eq 'deepseek-harness' -or \$strictButton -or -not \$allowQueue\) \{ throw 'DESKTOP_TASK_SEND_UNAVAILABLE' \}/);
+  assert.match(source, /if \(\$state.Agent -eq 'deepseek-harness' -or \$state.Agent -eq 'prism-agent' -or \$strictButton -or -not \$allowQueue\) \{ throw 'DESKTOP_TASK_SEND_UNAVAILABLE' \}/);
   assert.match(source, /\$submission = Invoke-SendButton \$state \$true \$true/);
 });
 
@@ -118,7 +118,7 @@ test("both platforms append live drafts without waiting for old receipts", () =>
 test("WorkBuddy snapshots share the safe task protocol but keep native adapters isolated", () => {
   const windows = rust("codex_composer.rs");
   const snapshot = windows.split("function Get-TaskDraftSnapshot")[1].split("function Test-CodexSubmitPoint")[0];
-  assert.match(snapshot, /@\('codex','workbuddy','deepseek-harness','zcode'\) -notcontains \$state.Agent/);
+  assert.match(snapshot, /@\('codex','workbuddy','deepseek-harness','prism-agent','zcode'\) -notcontains \$state.Agent/);
   assert.match(snapshot, /agent = \$state.Agent/);
   assert.match(snapshot, /@\('agent','processId'/);
   const dispatch = windows.split("'dispatch' {")[1].split("'release' {")[0];

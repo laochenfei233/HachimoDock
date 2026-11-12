@@ -221,6 +221,16 @@ test("DeepSeek dictation identifies its actual final-only composer without promi
 });
 
 
+test("Prism dictation identifies its actual final-only composer without promising live writes", () => {
+  for (const phase of ["listening", "partial", "draft_ready", "submitting", "submitted"]) {
+    const message = transcriptMessage({ agentId: "prism-agent" }, phase, "visible");
+    assert.match(message, /Prism/);
+    assert.doesNotMatch(message, /ChatGPT|WorkBuddy|实时同步|实时识别并同步/);
+  }
+  assert.match(transcriptMessage({ agentId: "prism-agent" }, "partial", "visible"), /松开后一次写入/);
+});
+
+
 test("uncertain submit is terminal unknown, never sent or a known rejection", () => {
   const ready = transcript(DEVICE_VOICE_ROUTER_INITIAL_STATE, {
     utteranceId: "presentation-a", phase: "draft_ready", revision: 2,

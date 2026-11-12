@@ -27,7 +27,7 @@ test("WorkBuddy stays isolated through native USB routing and Bridge startup", (
 test("WorkBuddy voice uses its own current desktop composer and never falls back to Codex", () => {
   const source = read("../src-tauri/src/lib.rs").split("fn continue_device_voice_context_start(")[1].split("fn ")[0];
   assert.doesNotMatch(source, /暂不支持按键语音输入/);
-  assert.match(source, /matches!\(startup_context.target.agent_id.as_str\(\), "workbuddy" \| "deepseek-harness" \| "zcode"\) \{\s*Err\(/);
+  assert.match(source, /matches!\(startup_context.target.agent_id.as_str\(\), "workbuddy" \| "deepseek-harness" \| "prism-agent" \| "zcode"\) \{\s*Err\(/);
   const composer = read("../src-tauri/src/codex_composer.rs");
   assert.match(composer, /"workbuddy" => macos::MacosAgent::WorkBuddy/);
   assert.match(composer, /"workbuddy" => &\["workbuddy.exe"\]/);
@@ -142,7 +142,7 @@ test("Windows WorkBuddy reads Chromium only through the native UIA COM client", 
     assert.doesNotMatch(path, /Automation\.AutomationElement|Automation\.TreeWalker|Find-BoundedComposerElements|Find-PointComposerElements/);
   }
   assert.match(workbuddyPaths[3], /Test-CurrentElectronAgent \$state.Agent[\s\S]*\[WorkBuddyUia\]::FindBounded/);
-  assert.match(source, /return @\('workbuddy','deepseek-harness','zcode'\) -contains \$agent/);
+  assert.match(source, /return @\('workbuddy','deepseek-harness','prism-agent','zcode'\) -contains \$agent/);
   const native = between("public static class WorkBuddyUia {", '"@');
   assert.match(native, /e22ad333-b25f-460c-83d0-0581107395c9/);
   assert.match(native, /GetRawViewWalker\(\)/);

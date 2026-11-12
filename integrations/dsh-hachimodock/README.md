@@ -130,7 +130,9 @@ with its own capability descriptor directory (`~/.claw-pet/prism-bridge/`); the 
 manager registers a `prism-agent` adapter and a second approval relay bound to that
 descriptor. Conversation switching (`POST /sessions/activate`, bus token) fans the device
 selection to prism's web client, which changes the selected conversation without stealing
-window focus.
+window focus. Device voice input targets prism's visible composer through the same OS
+accessibility composer adapter as DeepSeek Harness (final-only draft, explicit confirm);
+the bridge `/inject` stream stays available as the receipt-backed delivery channel.
 
 ## Focused checks
 

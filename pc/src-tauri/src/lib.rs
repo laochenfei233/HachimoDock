@@ -679,14 +679,16 @@ fn p4_session_target_is_unique(
 fn agent_uses_visible_composer(agent_id: &str) -> bool {
     /* DeepSeek Harness desktop voice is the OS accessibility composer adapter
      * (see integrations/dsh-hachimodock/README.md); the plugin voice endpoints
-     * are a legacy ticket flow and do not register a desktop voice owner. */
-    matches!(agent_id, "codex" | "claude-code" | "workbuddy" | "deepseek-harness" | "zcode")
+     * are a legacy ticket flow and do not register a desktop voice owner.
+     * prism-agent is the same fork on the same adapter with its own identity. */
+    matches!(agent_id, "codex" | "claude-code" | "workbuddy" | "deepseek-harness" | "prism-agent" | "zcode")
 }
 
 fn agent_streams_voice_draft(agent_id: &str) -> bool {
     // Rich-text desktop editors use one final insertion, preserving the same
     // draft and selection rather than pasting every ASR hypothesis.
-    agent_uses_visible_composer(agent_id) && !matches!(agent_id, "workbuddy" | "deepseek-harness")
+    agent_uses_visible_composer(agent_id)
+        && !matches!(agent_id, "workbuddy" | "deepseek-harness" | "prism-agent")
 }
 
 fn device_voice_platform_block_reason(agent_id: &str, is_macos: bool) -> Option<&'static str> {
@@ -700,6 +702,8 @@ fn visible_composer_agent_label(agent_id: &str) -> &'static str {
         "WorkBuddy"
     } else if agent_id == "deepseek-harness" {
         "DeepSeek"
+    } else if agent_id == "prism-agent" {
+        "Prism"
     } else if agent_id == "claude-code" {
         "Claude"
     } else if agent_id == "zcode" {
@@ -1135,7 +1139,9 @@ fn should_use_current_visible_session(
     agent_id: &str,
 ) -> bool {
     agent_uses_visible_composer(agent_id)
-        && (agent_is_frontmost || session_queue_empty || matches!(agent_id, "workbuddy" | "codex" | "deepseek-harness" | "zcode"))
+        && (agent_is_frontmost
+            || session_queue_empty
+            || matches!(agent_id, "workbuddy" | "codex" | "deepseek-harness" | "prism-agent" | "zcode"))
 }
 
 fn voice_needs_current_composer(target: &P4SessionBinding, frontmost: bool, empty_queue: bool) -> bool {
@@ -1155,7 +1161,7 @@ fn device_voice_bound_target_is_addressable(
     session_queue_empty: bool,
     target: &P4SessionBinding,
 ) -> bool {
-    !matches!(target.agent_id.as_str(), "workbuddy" | "deepseek-harness" | "zcode")
+    !matches!(target.agent_id.as_str(), "workbuddy" | "deepseek-harness" | "prism-agent" | "zcode")
         && !session_queue_empty
         && !target.session_id.is_empty()
         && !target.session_title.is_empty()
@@ -2484,7 +2490,7 @@ fn continue_device_voice_context_start(context: Arc<DeviceVoiceContext>, agent_i
                 let start_bound = |callback: Arc<
                     dyn Fn(codex_composer::CodexComposerEvent) + Send + Sync,
                 >| {
-                    if matches!(startup_context.target.agent_id.as_str(), "workbuddy" | "deepseek-harness" | "zcode") {
+                    if matches!(startup_context.target.agent_id.as_str(), "workbuddy" | "deepseek-harness" | "prism-agent" | "zcode") {
                         Err(format!("请打开 {} 的目标对话后再开始语音输入", visible_composer_agent_label(&startup_context.target.agent_id)))
                     } else if startup_context.target.agent_id == "claude-code" {
                         codex_composer::CodexComposerBridge::start_claude(
@@ -2683,10 +2689,11 @@ fn continue_device_voice_context_start(context: Arc<DeviceVoiceContext>, agent_i
         }
     }) {
         Ok(recognizer) => {
-            if context.target.agent_id == "deepseek-harness" && !device_voice_round_is_current(&context) {
+            let final_only = matches!(context.target.agent_id.as_str(), "deepseek-harness" | "prism-agent");
+            if final_only && !device_voice_round_is_current(&context) {
                 recognizer.cancel();
                 if !context.final_handled.load(Ordering::SeqCst) && !context.cancelled.load(Ordering::SeqCst) {
-                    cancel_device_voice_context(&context, "DeepSeek voice target changed during ASR setup");
+                    cancel_device_voice_context(&context, &format!("{} voice target changed during ASR setup", visible_composer_agent_label(&context.target.agent_id)));
                 }
                 return;
             }
@@ -2746,9 +2753,9 @@ fn push_device_voice_chunk(chunk: usb_audio::ValidatedUsbAudioChunk) {
         return;
     }
     if context.final_handled.load(Ordering::SeqCst) { return; }
-    let dsh = context.target.agent_id == "deepseek-harness";
-    if dsh && !device_voice_round_is_current(&context) {
-        cancel_device_voice_context(&context, "DeepSeek voice target changed while buffering");
+    let final_only = matches!(context.target.agent_id.as_str(), "deepseek-harness" | "prism-agent");
+    if final_only && !device_voice_round_is_current(&context) {
+        cancel_device_voice_context(&context, &format!("{} voice target changed while buffering", visible_composer_agent_label(&context.target.agent_id)));
         return;
     }
     let pushed = (|| -> Result<(), String> {
@@ -2808,8 +2815,10 @@ fn finish_device_voice_context(completed: usb_audio::CompletedUsbAudio) {
         fail_device_voice_context(&context, "设备没有返回可识别的麦克风音频");
         return;
     }
-    if context.target.agent_id == "deepseek-harness" && !device_voice_round_is_current(&context) {
-        cancel_device_voice_context(&context, "DeepSeek voice target changed before audio end");
+    if matches!(context.target.agent_id.as_str(), "deepseek-harness" | "prism-agent")
+        && !device_voice_round_is_current(&context)
+    {
+        cancel_device_voice_context(&context, &format!("{} voice target changed before audio end", visible_composer_agent_label(&context.target.agent_id)));
         return;
     }
     let finished = (|| -> Result<bool, String> {
@@ -3702,13 +3711,14 @@ const BRIDGE_LAUNCH_AGENT_LABEL: &str = "com.petmanager.status-bridge";
 const BRIDGE_WINDOWS_STARTUP_SCRIPT_NAME: &str = "Pet Manager Status Bridge.cmd";
 const USB_STATE_MAX_AGE_MS: u64 = 10 * 60 * 1000;
 const USB_BRIDGE_SCAN_MAX_FILES: usize = 64;
-const KNOWN_USB_STATE_SOURCES: [&str; 7] = [
+const KNOWN_USB_STATE_SOURCES: [&str; 8] = [
     "claude-code",
     "codex",
     "openclaw",
     "mimocode",
     "deepseek-harness",
     "workbuddy",
+    "prism-agent",
     "zcode",
 ];
 #[cfg(windows)]
@@ -7376,14 +7386,23 @@ fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
 
     #[cfg(windows)]
     {
+        // The NSIS per-user install drops mainBinaryName `prism-agent.exe`
+        // into `%LOCALAPPDATA%\Prism Agent\`; cover the per-machine and
+        // Programs layouts with the same binary name.
+        const PRISM_WINDOWS_BINARY: &str = "prism-agent.exe";
         let mut candidates = Vec::new();
         if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            let local = PathBuf::from(local_app_data);
             push_unique_path(
                 &mut candidates,
-                PathBuf::from(local_app_data)
+                local.join("Prism Agent").join(PRISM_WINDOWS_BINARY),
+            );
+            push_unique_path(
+                &mut candidates,
+                local
                     .join("Programs")
                     .join("Prism Agent")
-                    .join("Prism Agent.exe"),
+                    .join(PRISM_WINDOWS_BINARY),
             );
         }
         if let Some(program_files) = env::var_os("ProgramFiles") {
@@ -7391,7 +7410,7 @@ fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
                 &mut candidates,
                 PathBuf::from(program_files)
                     .join("Prism Agent")
-                    .join("Prism Agent.exe"),
+                    .join(PRISM_WINDOWS_BINARY),
             );
         }
         for candidate in candidates {
@@ -7406,11 +7425,22 @@ fn find_prism_app_bundle(home: Option<&Path>) -> Option<PathBuf> {
 
 fn find_prism_cli(home: Option<&Path>, app_path: Option<&Path>) -> Option<PathBuf> {
     if let Some(app_path) = app_path {
-        let bundled = PRISM_BUNDLED_CLI_RELATIVE_PATH
-            .split('/')
-            .fold(app_path.to_path_buf(), |path, segment| path.join(segment));
-        if bundled.is_file() {
-            return Some(bundled);
+        let bundled = if cfg!(target_os = "macos") {
+            Some(
+                PRISM_BUNDLED_CLI_RELATIVE_PATH.split('/').fold(
+                    app_path.to_path_buf(),
+                    |path, segment| path.join(segment),
+                ),
+            )
+        } else {
+            // Windows installs put the runtime next to prism-agent.exe
+            // instead of inside a Contents/Resources bundle.
+            app_path
+                .parent()
+                .map(|dir| dir.join("runtime").join("prism").join("lib").join("bin.js"))
+        };
+        if bundled.as_deref().is_some_and(Path::is_file) {
+            return bundled;
         }
     }
     find_agent_executable(
@@ -10404,6 +10434,7 @@ fn normalize_agent_id(value: &str) -> Option<String> {
         "mimo" | "mimo-code" | "mimocode" => Some("mimocode".to_string()),
         "deepseek-harness" | "deepseek" | "dsh" => Some("deepseek-harness".to_string()),
         "workbuddy" | "work-buddy" => Some("workbuddy".to_string()),
+        "prism-agent" | "prism" => Some("prism-agent".to_string()),
         "copilot" | "copilot-cli" => Some("copilot-cli".to_string()),
         "gemini" | "gemini-cli" => Some("gemini-cli".to_string()),
         "cursor" => Some("cursor".to_string()),
@@ -10887,6 +10918,9 @@ fn score_usb_source(source: &str) -> i32 {
         // breaks exact state/ts ties between sources.
         "codex" => 30,
         "deepseek-harness" => 25,
+        // Prism is the DeepSeek Harness fork on the same session bus; rank it
+        // just below DSH so a same-timestamp tie still prefers DSH.
+        "prism-agent" => 24,
         "claude-code" => 20,
         "mimocode" => 15,
         "workbuddy" => 15,
@@ -10943,6 +10977,7 @@ fn usb_source_display_name(source: &str) -> String {
         "mimo" | "mimo-code" | "mimocode" => "MiMoCode".to_string(),
         "deepseek-harness" | "deepseek" | "dsh" => "DeepSeek Harness".to_string(),
         "workbuddy" | "work-buddy" => "WorkBuddy".to_string(),
+        "prism-agent" | "prism" => "Prism".to_string(),
         "zcode" => "ZCode".to_string(),
         other if !other.is_empty() => other.to_string(),
         _ => "桌宠".to_string(),
@@ -12346,6 +12381,7 @@ fn selected_agent_to_channel_id(value: &str) -> String {
         "mimocode" => "mimocode".to_string(),
         "deepseek-harness" => "deepseek-harness".to_string(),
         "workbuddy" => "workbuddy".to_string(),
+        "prism-agent" => "prism-agent".to_string(),
         _ => DEFAULT_PET_CHANNEL_ID.to_string(),
     }
 }
@@ -12358,6 +12394,7 @@ fn normalize_pet_channel_id(value: String) -> String {
         "mimocode" => "mimocode".to_string(),
         "deepseek-harness" | "deepseek" | "dsh" => "deepseek-harness".to_string(),
         "workbuddy" => "workbuddy".to_string(),
+        "prism-agent" | "prism" => "prism-agent".to_string(),
         "cursor" => "cursor".to_string(),
         _ => DEFAULT_PET_CHANNEL_ID.to_string(),
     }
@@ -14100,6 +14137,39 @@ mod tests {
     }
 
     #[test]
+    fn prism_agent_aliases_preserve_bus_identity_and_final_only_visible_composer() {
+        assert_eq!(normalize_agent_id("prism-agent").as_deref(), Some("prism-agent"));
+        assert_eq!(normalize_agent_id("prism").as_deref(), Some("prism-agent"));
+        assert_eq!(selected_agent_to_channel_id("prism-agent"), "prism-agent");
+        assert_eq!(normalize_pet_channel_id("prism".into()), "prism-agent");
+        assert_eq!(usb_source_display_name("prism-agent"), "Prism");
+        assert_eq!(usb_source_display_name("prism"), "Prism");
+        assert!(KNOWN_USB_STATE_SOURCES.contains(&"prism-agent"));
+        // Prism is the DeepSeek Harness fork: same final-only current-visible
+        // composer contract, no streaming drafts, no bound-history targeting.
+        assert!(agent_uses_visible_composer("prism-agent"));
+        assert!(!agent_streams_voice_draft("prism-agent"));
+        assert_eq!(visible_composer_agent_label("prism-agent"), "Prism");
+        assert!(!should_locate_desktop_session(true, "prism-agent"));
+        assert!(device_voice_platform_block_reason("prism-agent", false).is_none());
+        assert!(device_voice_platform_block_reason("prism-agent", true).is_none());
+        assert!(should_use_current_visible_session(false, false, "prism-agent"));
+        assert!(!device_voice_bound_target_is_addressable(false, &P4SessionBinding {
+            agent_id: "prism-agent".into(), session_id: "id".into(), session_title: "title".into(),
+            session_title_unique: true, ..P4SessionBinding::default()
+        }));
+    }
+
+    #[test]
+    fn prism_agent_usb_source_ranks_between_dsh_and_claude() {
+        let prism_score = score_usb_source("prism-agent");
+        assert_eq!(prism_score, 24);
+        assert!(prism_score < score_usb_source("deepseek-harness"));
+        assert!(prism_score > score_usb_source("claude-code"));
+        assert!(prism_score > score_usb_source("openclaw"));
+    }
+
+    #[test]
     fn deepseek_harness_usb_source_ranks_between_codex_and_claude() {
         let dsh_score = score_usb_source("deepseek-harness");
         assert!(dsh_score < score_usb_source("codex"));
@@ -14363,7 +14433,28 @@ mod tests {
         assert!(detected.detail.contains("配置"));
         let empty = tempfile::tempdir().unwrap();
         assert_eq!(detect_prism_with_home(Some(empty.path())).id, "prism-agent");
-        assert!(!detect_prism_with_home(Some(empty.path())).detected);
+        // The app/CLI probes consult the real host layout regardless of the
+        // injected home, so absence only holds on hosts without an install.
+        if find_prism_app_bundle(None).is_none() {
+            assert!(!detect_prism_with_home(Some(empty.path())).detected);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn prism_windows_bundled_cli_resolves_next_to_the_installed_binary() {
+        let install = tempfile::tempdir().unwrap();
+        let exe = install.path().join("prism-agent.exe");
+        let bundled = install
+            .path()
+            .join("runtime")
+            .join("prism")
+            .join("lib")
+            .join("bin.js");
+        fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        fs::write(&exe, b"stub").unwrap();
+        fs::write(&bundled, b"export default 0;\n").unwrap();
+        assert_eq!(find_prism_cli(None, Some(exe.as_path())), Some(bundled));
     }
 
     #[test]
@@ -15576,7 +15667,9 @@ mod tests {
                 "deepseek-harness".to_string(),
                 "mimocode".to_string(),
                 "openclaw".to_string(),
-                "workbuddy".to_string()
+                "prism-agent".to_string(),
+                "workbuddy".to_string(),
+                "zcode".to_string()
             ]
         );
     }

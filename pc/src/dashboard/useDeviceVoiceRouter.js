@@ -317,7 +317,7 @@ export function transcriptMessage(payload, phase, composerMode) {
     return "正在聆听并实时识别。";
   }
   if (phase === "partial") {
-    if (["WorkBuddy", "DeepSeek Harness"].includes(visibleAgentLabel)) {
+    if (["WorkBuddy", "DeepSeek Harness", "Prism"].includes(visibleAgentLabel)) {
       return `正在实时识别；松开后一次写入 ${visibleAgentLabel}，写入确认前请保持目标对话在前台。`;
     }
     if (composerMode === "visible") {
