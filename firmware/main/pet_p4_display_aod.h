@@ -37,9 +37,9 @@ unsigned pet_p4_display_aod_timeout_min(void);
 unsigned pet_p4_display_aod_item_count(void);
 pet_p4_aod_item_t pet_p4_display_aod_item(unsigned index);
 /* 输入汇聚点(input/touch 队列循环)调用:记录活跃时间;AOD 激活时吞掉该
- * 事件并唤醒,返回 true=事件已消费,调用方不得再做其他分发。唤醒后的宽限
- * 窗口内(含同一触摸笔画到抬起为止)继续吞事件,避免唤醒触摸泄漏成恢复页
- * 的点击/滑动。 */
+ * 事件并唤醒,返回 true=事件已消费,调用方不得再做其他分发。按键路径在
+ * 300ms 唤醒宽限窗内继续吞事件(覆盖旋钮多格/摇杆 REPEAT),笔画细节由
+ * consume_touch 的触摸侧闩锁负责。 */
 bool pet_p4_display_aod_consume_input(pet_p4_runtime_state_t *state);
 /* touch 侧专用:stroke_end 表示该样本是指针抬起/取消(笔画结束)。 */
 bool pet_p4_display_aod_consume_touch(pet_p4_runtime_state_t *state, bool stroke_end);

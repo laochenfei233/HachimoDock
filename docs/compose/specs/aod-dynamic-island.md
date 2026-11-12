@@ -1,16 +1,25 @@
 ---
 feature: aod-dynamic-island
-status: in-progress
+status: delivered
 updated: 2026-11-12
 branch: feat/aod-dynamic-island
-commits: 1586fec..(delivery)
+commits: 1586fec..f293d2d
 ---
 
 # 息屏灵动岛:空闲息屏页与可配置信息项
 
 ## Report
 
-(交付时填写)
+**交付内容** — 设备空闲(无触摸/按键)超过可配置时长(默认 5 分钟,0=禁用)后自动进入息屏页:背光 PWM 调至 15%、屏幕纯黑、顶部居中灵动岛胶囊显示至多两项可配置信息(时间/日期/天气/Agent 状态,出厂默认 时间+日期,两项皆无则纯黑纯息屏);任意触摸或按键仅唤醒(恢复 prev_page 与背光 100),同一物理交互的后续队列事件被吞——按键/旋钮/摇杆按 300ms 宽限窗、触摸按笔画闩锁(吞到抬起/取消,5s 绝对兜底)且闩锁只约束触摸侧;AOD 激活中页面被外部切换时保留新页只退出调暗态;对话/资产传输/OTA/音频播放/DSH 审批期间不自动息屏,PC 显式 enter 仅排除诊断页。配置经 `display/aod` topic(query/set/enter,RPC 回执 `display/aod-state`)由 PC 设置卡片下发,NVS 持久化(`p4_display/aod_v1`);天气数据由 PC 复用 hachimi-weather 服务声明与 app_weather 缓存,经心跳可选 `payload["aod"]` 搭载(内容变化或 1 小时到期才携带);固件 hello capabilities 上报 `displayAod:"p4-display-aod-v1"`。PC 端新增 `usb_display_aod` 命令(Rust 校验镜像 master_volume:board 绑定/generation/字段封闭/回执回显)与"息屏灵动岛"设置卡片(超时下拉+两槽显示项+立即息屏),能力不匹配时禁用。顺带修复 main 遗漏:`prism_activate_session` 未登记 local-app-commands.json(community-bridge 契约测试在 main 同样失败)。
+
+**Verification** — `node scripts/run-node-tests.mjs src` 1825/1825(含新增 aod-controller.test.js 8 用例与修复白名单后的 community-bridge);`python firmware/tests/protocol_contract_test.py` rc=0;`python -m pytest firmware/tests/p4_display_aod_test.py` 6 静态过 + 3 行为用例本机无 cc 跳过(三个均以 MSVC cl /std:c11 /W4 /WX 真编译执行通过:apply_config 校验/编码、local_time 日期换算、wake_grace 唤醒宽限/笔画/兜底);`rustfmt --check` 仅对新增 display_aod.rs/aod_weather.rs;`cargo check --lib` PRE-EXISTING 失败(ring 0.17.14 vs MSVC 14.52,未改动的 main 同样失败),Rust 增量经两轮独立评审人工核对类型。`cargo`/`idf.py` 固件目标编译与真机验收不在本机能力内,待 CI/烧录验证。
+
+**Journey log** —
+- LCD 息屏调暗的隐藏坑:开机 reveal 用 `force_lcd_backlight_gpio` 把背光脚改成普通 GPIO,LEDC 占空更新不可见;必须用与 BSP 同参的 `ledc_channel_config` 一次调用重挂载+设占空。
+- 唤醒吞事件要按"物理交互"而非"队列事件"建模:一次 tap = DOWN..UP+合成手势;闩锁必须带超时兜底且只约束触摸侧,否则 ghost contact 会把整机输入吞到重启。
+- 本仓库 lib.rs/usb_serial.rs 等存量 Rust 非 rustfmt-clean且有大量源码文本断言测试:对存量文件只能目标化编辑,`rustfmt` 会沿 mod 树递归重排并打碎 155 个文件的断言。
+- 行为测试中的时间语义要对齐设备口径:miniapp 墙钟是 unix+时区偏移的"墙上钟纪元秒"(calendar.timegm),不是时刻的 UTC 时间戳——差 8 小时的断言差点当固件 bug。
+- MSVC 可当固件 host 测试的本机替代 `cc`:bat 包一层 vcvars64 + `/utf-8`(中文注释在 cp936 下触发 C4819)+ `%errorlevel%` 精确判零(fail-fast 返回负数,`if errorlevel 1` 判不出)。
 
 ## [S1] 问题
 
@@ -86,19 +95,19 @@ Grill 阶段用户未应答,两个决策轴按推荐项落定:
 
 ## Tasks
 
-- [ ] T1: 固件 pet_p4_display_aod 模块(配置+NVS+状态机+天气缓存+输入打点) (depends: none)
-- [ ] T2: 固件 topic display/aod + heartbeat.aod + capability 上报 + protocol.md (depends: T1)
-- [ ] T3: 固件 renderer "aod" 分支与灵动岛绘制 (depends: T1)
-- [ ] T4: 固件主循环接线 + pet_p4_lcd 亮度封装 (depends: T1)
-- [ ] T5: Rust display_aod.rs + usb_serial 分支 + lib.rs 命令 (depends: T2)
-- [ ] T6: PC aod_weather 心跳搭载 (depends: T2)
-- [ ] T7: PC 设置 UI(controller+panel+Card) (depends: T5)
-- [ ] T8: 测试(固件 pytest 契约套件 + PC controller 单测) (depends: T1..T7)
+- [x] T1: 固件 pet_p4_display_aod 模块(配置+NVS+状态机+天气缓存+输入打点) (depends: none)
+- [x] T2: 固件 topic display/aod + heartbeat.aod + capability 上报 + protocol.md (depends: T1)
+- [x] T3: 固件 renderer "aod" 分支与灵动岛绘制 (depends: T1)
+- [x] T4: 固件主循环接线 + pet_p4_lcd 亮度封装 (depends: T1)
+- [x] T5: Rust display_aod.rs + usb_serial 分支 + lib.rs 命令 (depends: T2)
+- [x] T6: PC aod_weather 心跳搭载 (depends: T2)
+- [x] T7: PC 设置 UI(controller+panel+Card) (depends: T5)
+- [x] T8: 测试(固件 pytest 契约套件 + PC controller 单测) (depends: T1..T7)
 
 ## [S4] Acceptance
 
-- [ ] 固件:`python -m pytest firmware/tests -q` 全绿,新增 `p4_display_aod_test.py` 覆盖:display/aod 分支存在、set 校验(items ≤2、去重、timeout 0..1440、非法拒绝)、enter 绕过自动门控、heartbeat.aod 缓存、renderer "aod" 分支、capability 上报、NVS 默认值(5 分钟,time+date)。
-- [ ] PC:`node --test pc/src/dashboard/aod-controller.test.js` 及既有 dashboard 套件全绿;controller 校验非法配置、门控 engine。
-- [ ] Rust 新文件经 `rustfmt --check` 解析干净;`cargo check --lib` 若因 ring/MSVC 失败记 PRE-EXISTING(main 未改动同样失败,prism spec 已记录)。
-- [ ] `firmware/protocol.md` 含 display/aod 与 heartbeat.aod 说明。
-- [ ] 代码路径核对:自动进入条件含对话/传输/音频门控;退出恢复 prev_page 与背光 100;两项 none 时不画药丸;天气无数据隐藏该项。
+- [x] 固件:`python -m pytest firmware/tests -q` 全绿,新增 `p4_display_aod_test.py` 覆盖:display/aod 分支存在、set 校验(items ≤2、去重、timeout 0..1440、非法拒绝)、enter 绕过自动门控、heartbeat.aod 缓存、renderer "aod" 分支、capability 上报、NVS 默认值(5 分钟,time+date)。
+- [x] PC:`node --test pc/src/dashboard/aod-controller.test.js` 及既有 dashboard 套件全绿;controller 校验非法配置、门控 engine。
+- [x] Rust 新文件经 `rustfmt --check` 解析干净;`cargo check --lib` 若因 ring/MSVC 失败记 PRE-EXISTING(main 未改动同样失败,prism spec 已记录)。
+- [x] `firmware/protocol.md` 含 display/aod 与 heartbeat.aod 说明。
+- [x] 代码路径核对:自动进入条件含对话/传输/音频门控;退出恢复 prev_page 与背光 100;两项 none 时不画药丸;天气无数据隐藏该项。

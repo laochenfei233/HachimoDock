@@ -510,7 +510,7 @@ void pet_p4_touch_process(
   if (!g_touch_queue) return;
   while (xQueueReceive(g_touch_queue, &sample, 0) == pdTRUE) {
     /* 息屏灵动岛激活时,触摸只唤醒屏幕;同一笔画的后续样本(含合成手势)
-     * 在唤醒宽限内继续吞掉,不进入页面手势处理。 */
+     * 被触摸侧闩锁吞到抬起/取消或 5s 上限为止,不进入页面手势处理。 */
     bool aod_stroke_end = sample.has_pointer
       && (sample.pointer.kind == PET_P4_POINTER_UP || sample.pointer.kind == PET_P4_POINTER_CANCEL);
     if (pet_p4_display_aod_consume_touch(state, aod_stroke_end)) continue;
