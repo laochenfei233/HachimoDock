@@ -1,6 +1,6 @@
 /**
  * [Input] ApiSettings page, App routing, feature pages, and shared stylesheet source.
- * [Output] Editable LLM model/default regression coverage plus centralized API-key ownership, speech key guide, saved-ASR broadcasts, routing and responsive layout.
+ * [Output] Editable LLM/ASR/TTS model/default regression coverage plus centralized API-key ownership, per-provider speech scopes, speech key guide, saved-ASR broadcasts, routing and responsive layout.
  * [Pos] test node in pc/src
  * [Sync] If this file changes, update `pc/src/.folder.md`.
  */
@@ -10,7 +10,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { LLM_PRESETS, DEFAULT_LLM_PROVIDER, selectLlmProvider, changeLlmEndpoint, describeLlmPreset } from "./lib/api-configuration.js";
+import {
+  LLM_PRESETS,
+  ASR_PROVIDER_PRESETS,
+  TTS_PROVIDER_PRESETS,
+  DEFAULT_LLM_PROVIDER,
+  selectLlmProvider,
+  changeLlmEndpoint,
+  selectAsrProvider,
+  changeAsrEndpoint,
+  selectTtsProvider,
+  changeTtsEndpoint,
+  speechCredentialScope,
+  describeLlmPreset,
+} from "./lib/api-configuration.js";
 
 const srcDir = dirname(fileURLToPath(import.meta.url));
 const readSource = (file) => readFileSync(join(srcDir, file), "utf8");
@@ -130,13 +143,101 @@ test("API settings owns voice and generation credential inputs", () => {
   assert.match(source, /emitApiConfigurationUpdated/);
   assert.doesNotMatch(source, /macOS 不使用钥匙串|仅由当前用户读取，不额外加密|无需选择模型版本|火山引擎豆包语音（识别 \+ 合成）/);
   assert.doesNotMatch(source, /2628951/);
-  assert.match(source, /title="语音识别与合成"\s+subtitle=\{\([\s\S]*?识别与合成共用一个 API Key[\s\S]*?href="https:\/\/docs\.volcengine\.com\/docs\/DoubaoVoice\/APIKeyUsage\?lang=zh"[\s\S]*?Key 获取方式[\s\S]*?actions=\{/);
+  assert.match(source, /title="语音识别"\s+subtitle=\{\([\s\S]*?href="https:\/\/docs\.volcengine\.com\/docs\/DoubaoVoice\/APIKeyUsage\?lang=zh"[\s\S]*?Key 获取方式[\s\S]*?actions=\{/);
+  assert.match(source, /title="语音合成"\s+subtitle="[^"]*识别与合成共用一个 API Key/);
   assert.match(source, /<details>[\s\S]*ASR 2\.0 和 TTS 2\.0/);
+  assert.match(source, /MiMo 暂不支持语音识别，请选择其他服务商/);
+  assert.match(source, /豆包语音合成与识别共用一把 Key；资源编号 \{speech\.ttsResourceId/);
   assert.match(source, /https:\/\/ark\.volcengine\.com\/model\/detail\?name=doubao-seedance-2-0-mini/);
   assert.match(source, /provider\.id === "volcengine"/);
   assert.equal((source.match(/Key 获取方式/g) || []).length, 2);
   assert.equal((source.match(/target="_blank"/g) || []).length, 2);
   assert.equal((source.match(/rel="noreferrer"/g) || []).length, 2);
+});
+
+test("speech cards split recognition and synthesis with independent provider rows and counters", () => {
+  const source = readSource("ApiSettings.jsx");
+  assert.match(source, /aria-label="语音识别服务商"/);
+  assert.match(source, /aria-label="语音合成服务商"/);
+  assert.match(source, /ASR_PROVIDER_PRESETS\.map/);
+  assert.match(source, /TTS_PROVIDER_PRESETS\.map/);
+  assert.match(source, /selectAsrProvider\(current, preset\.id\)/);
+  assert.match(source, /selectTtsProvider\(current, preset\.id\)/);
+  assert.match(source, /changeAsrEndpoint\(current, event\.target\.value\)/);
+  assert.match(source, /changeTtsEndpoint\(current, event\.target\.value\)/);
+  assert.match(source, /speech\.asrConfigured \? 1 : 0/);
+  assert.match(source, /speech\.ttsConfigured \? 1 : 0/);
+  assert.match(source, /VIDEO_PROVIDERS\.length \+ 3/);
+  assert.doesNotMatch(source, /title="语音识别与合成"/);
+});
+
+test("speech provider presets supply per-service defaults", () => {
+  assert.deepEqual(ASR_PROVIDER_PRESETS.map(({ id, label, model }) => ({ id, label, model })), [
+    { id: "volcengine", label: "豆包", model: "volc.seedasr.sauc.duration" },
+    { id: "dashscope", label: "通义千问", model: "paraformer-realtime-v2" },
+    { id: "mimo", label: "MiMo", model: "" },
+    { id: "custom", label: "自定义", model: "" },
+  ]);
+  assert.deepEqual(TTS_PROVIDER_PRESETS.map(({ id, label, model, voice }) => ({ id, label, model, voice })), [
+    { id: "volcengine", label: "豆包", model: "seed-tts-2.0-standard", voice: "" },
+    { id: "dashscope", label: "通义千问", model: "cosyvoice-v3-flash", voice: undefined },
+    { id: "mimo", label: "MiMo", model: "mimo-v2.5-tts", voice: undefined },
+    { id: "custom", label: "自定义", model: "", voice: undefined },
+  ]);
+  assert.equal(TTS_PROVIDER_PRESETS[1].voices[0], "longxiaochun_v3");
+  assert.equal(TTS_PROVIDER_PRESETS[1].voices.length, 6);
+  assert.equal(speechCredentialScope("dashscope"), "dashscope");
+  assert.equal(speechCredentialScope("custom", " https://one.invalid/v1/ "), "custom:https://one.invalid/v1");
+  assert.equal(speechCredentialScope("custom", ""), "custom:(未填写接口地址)");
+});
+
+test("switching speech providers clears the draft key and restores their own scope masks", () => {
+  const masks = { volcengine: "vb…0001", dashscope: "ds…0002", mimo: "mi…0003",
+    "custom:https://one.invalid/v1": "one…0004", "custom:https://two.invalid/v1": "two…0005" };
+  const asr = { asrProvider: "dashscope", asrBaseUrl: "https://dashscope.aliyuncs.com", asrModel: "old-model",
+    asrApiKey: "unsaved-draft", asrApiKeyMasked: "ds…0002", asrApiKeyMasks: masks, asrConfigured: true,
+    asrTone: "success", asrMessage: "已配置" };
+  for (const provider of ["volcengine", "mimo", "custom"]) {
+    const next = selectAsrProvider(asr, provider);
+    if (provider === "custom") {
+      assert.equal(next.asrBaseUrl, "", "custom starts from the remembered custom endpoint");
+      assert.equal(next.asrApiKeyMasked, "", "empty endpoint has no saved mask");
+    } else {
+      assert.equal(next.asrApiKeyMasked, masks[provider]);
+    }
+    assert.equal(next.asrApiKey, "");
+    assert.equal(next.asrConfigured, provider !== "custom");
+    assert.equal(selectAsrProvider(next, "dashscope").asrApiKeyMasked, masks.dashscope);
+    assert.match(next.asrMessage, /不会沿用|已读取/);
+  }
+  const asrCustom = { ...selectAsrProvider({ ...asr, asrCustomBaseUrl: "https://one.invalid/v1" }, "custom"),
+    asrApiKey: "unsaved-draft" };
+  assert.equal(asrCustom.asrBaseUrl, "https://one.invalid/v1");
+  assert.equal(asrCustom.asrApiKeyMasked, "one…0004");
+  assert.equal(asrCustom.asrModel, "");
+  assert.equal(changeAsrEndpoint(asrCustom, "https://two.invalid/v1/").asrApiKeyMasked, "two…0005");
+  assert.equal(changeAsrEndpoint(asrCustom, " https://one.invalid/v1/ ").asrApiKey, "unsaved-draft",
+    "formatting-only changes keep the draft");
+  assert.equal(changeAsrEndpoint(asrCustom, "https://unknown.invalid").asrConfigured, false);
+
+  const tts = { ttsProvider: "dashscope", ttsBaseUrl: "https://dashscope.aliyuncs.com", ttsModel: "old",
+    ttsVoice: "longshu_v3", ttsApiKey: "unsaved-draft", ttsApiKeyMasked: "ds…0002", ttsApiKeyMasks: masks,
+    ttsConfigured: true, ttsTone: "success", ttsMessage: "已配置" };
+  const toVolcengine = selectTtsProvider(tts, "volcengine");
+  assert.equal(toVolcengine.ttsApiKey, "");
+  assert.equal(toVolcengine.ttsApiKeyMasked, masks.volcengine);
+  assert.equal(toVolcengine.ttsVoice, "", "doubao voices follow the persona, not a global default");
+  const toMimo = selectTtsProvider(tts, "mimo");
+  assert.equal(toMimo.ttsModel, "mimo-v2.5-tts");
+  assert.equal(toMimo.ttsVoice, "", "mimo has no preset voice");
+  const toDashscope = selectTtsProvider(tts, "dashscope");
+  assert.equal(toDashscope, tts, "same provider keeps the draft untouched");
+  const backToDashscope = selectTtsProvider(toMimo, "dashscope");
+  assert.equal(backToDashscope.ttsVoice, "longxiaochun_v3", "preset providers default their first voice");
+  assert.equal(backToDashscope.ttsApiKeyMasked, masks.dashscope);
+  const ttsCustom = selectTtsProvider({ ...tts, ttsCustomBaseUrl: "https://one.invalid/v1" }, "custom");
+  assert.equal(changeTtsEndpoint(ttsCustom, "https://two.invalid/v1/").ttsApiKeyMasked, "two…0005");
+  assert.equal(changeTtsEndpoint(ttsCustom, "https://two.invalid/v1/").ttsApiKey, "");
 });
 
 test("saved ASR credentials are broadcast before the optional cloud probe", () => {
@@ -152,6 +253,31 @@ test("saved ASR credentials are broadcast before the optional cloud probe", () =
   assert.ok(broadcastIndex < probeIndex, "broadcast must not wait for the probe");
   assert.match(saveAndTest[0], /providerId: "volcengine-asr"/);
   assert.match(saveAndTest[0], /configured: saved\?\.configured === true/);
+});
+
+test("non-volcengine speech saves go through save_voice_chat_settings and broadcast per scope", () => {
+  const source = readSource("ApiSettings.jsx");
+  const saveSpeech = source.match(/const saveSpeechAsr = async \(\) => \{[\s\S]*?\n  \};/);
+  assert.ok(saveSpeech, "expected saveSpeechAsr");
+  const invokeIndex = saveSpeech[0].indexOf('invoke("save_voice_chat_settings"');
+  const broadcastIndex = saveSpeech[0].indexOf('emitApiConfigurationUpdated({ providerId: "voice-asr"');
+  assert.ok(invokeIndex !== -1 && broadcastIndex !== -1);
+  assert.ok(invokeIndex < broadcastIndex, "persist credentials before broadcasting");
+  assert.match(saveSpeech[0], /asrProvider: speech\.asrProvider/);
+  assert.match(saveSpeech[0], /asrModel: speech\.asrModel\.trim\(\)/);
+  assert.match(saveSpeech[0], /asrBaseUrl: speech\.asrProvider === "custom" \? speech\.asrBaseUrl\.trim\(\) : null/);
+  assert.match(saveSpeech[0], /asrApiKey: speech\.asrApiKey\.trim\(\) \|\| null/);
+  assert.match(saveSpeech[0], /configured: status\?\.asrConfigured === true/);
+
+  const saveTts = source.match(/const saveSpeechTts = async \(\) => \{[\s\S]*?\n  \};/);
+  assert.ok(saveTts, "expected saveSpeechTts");
+  assert.match(saveTts[0], /ttsProvider: speech\.ttsProvider/);
+  assert.match(saveTts[0], /ttsModel: speech\.ttsModel\.trim\(\)/);
+  assert.match(saveTts[0], /ttsVoice: speech\.ttsVoice\.trim\(\)/);
+  assert.match(saveTts[0], /ttsBaseUrl: speech\.ttsProvider === "custom" \? speech\.ttsBaseUrl\.trim\(\) : null/);
+  assert.match(saveTts[0], /ttsSpeechKey: speech\.ttsApiKey\.trim\(\) \|\| null/);
+  assert.match(saveTts[0], /providerId: "voice-tts"/);
+  assert.match(saveTts[0], /已保存 \$\{status\?\.ttsApiKeyMasked\}/);
 });
 
 test("app exposes API configuration as a first-level sidebar page", () => {

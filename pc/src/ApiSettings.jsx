@@ -1,6 +1,6 @@
 /**
- * [Input] Shared avatar provider configs including persisted video parameters, native Volcengine ASR credential commands, and optional return navigation.
- * [Output] Independent LLM/ASR reads, honest credential-save errors and retained navigation drafts; saved ASR changes are broadcast with save vs. test results distinguished.
+ * [Input] Shared avatar provider configs including persisted video parameters, native Volcengine ASR credential commands, per-provider ASR/TTS voice-chat status, and optional return navigation.
+ * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), and saved ASR changes are broadcast with save vs. test results distinguished.
  * [Pos] top-level page node in pc/src
  * [Sync] If this file changes, update this header and `pc/src/.folder.md`.
  */
@@ -37,9 +37,16 @@ import {
 import {
   LLM_PRESETS,
   DEFAULT_LLM_PROVIDER,
+  ASR_PROVIDER_PRESETS,
+  TTS_PROVIDER_PRESETS,
   describeLlmPreset,
   selectLlmProvider,
   changeLlmEndpoint,
+  selectAsrProvider,
+  changeAsrEndpoint,
+  selectTtsProvider,
+  changeTtsEndpoint,
+  speechCredentialScope,
   emitApiConfigurationUpdated,
   providerCredentialsConfigured,
 } from "./lib/api-configuration.js";
@@ -68,6 +75,8 @@ function resultToneClass(tone) {
   return tone ? ` is-${tone}` : "";
 }
 
+const DASHSCOPE_TTS_VOICES = TTS_PROVIDER_PRESETS.find((preset) => preset.id === "dashscope")?.voices || [];
+
 export default function ApiSettings({ onBack, configReadError = "", active = true }) {
   const usageHelp = useUsageHelp();
   const [showSecrets, setShowSecrets] = useState(false);
@@ -76,13 +85,35 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
   const [providerResults, setProviderResults] = useState({});
   const [providerPending, setProviderPending] = useState({});
   const [savedLlm, setSavedLlm] = useState(null);
-  const [asrApiKey, setAsrApiKey] = useState("");
-  const [asrState, setAsrState] = useState({
+  const [savedSpeech, setSavedSpeech] = useState(null);
+  // 语音识别/合成：豆包保持 keyring 路径；其他服务商凭据按 scope 隔离（后端只返回当前服务商掩码，
+  // 前端在 asr/ttsApiKeyMasks 里记录最近见过的掩码，切换服务商时据此恢复，复刻 LLM 卡的 mask/restore 模式）。
+  const [speech, setSpeech] = useState({
     loading: true,
-    pending: false,
-    configured: false,
-    tone: "muted",
-    message: "正在读取语音识别配置…",
+    asrPending: false,
+    asrProvider: "volcengine",
+    asrModel: ASR_PROVIDER_PRESETS[0].model,
+    asrBaseUrl: "",
+    asrCustomBaseUrl: "",
+    asrApiKey: "",
+    asrApiKeyMasked: "",
+    asrApiKeyMasks: {},
+    asrConfigured: false,
+    asrTone: "muted",
+    asrMessage: "正在读取语音识别配置…",
+    ttsPending: false,
+    ttsProvider: "volcengine",
+    ttsModel: TTS_PROVIDER_PRESETS[0].model,
+    ttsBaseUrl: "",
+    ttsCustomBaseUrl: "",
+    ttsVoice: "",
+    ttsApiKey: "",
+    ttsApiKeyMasked: "",
+    ttsApiKeyMasks: {},
+    ttsConfigured: false,
+    ttsResourceId: "",
+    ttsTone: "muted",
+    ttsMessage: "正在读取语音合成配置…",
   });
   // 实时对话：服务预填默认模型并允许修改；豆包 Seed TTS 2.0 复用识别 Key。
   const [voiceChat, setVoiceChat] = useState({
@@ -103,9 +134,14 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
   const llmDraft = JSON.stringify([voiceChat.llmProvider, voiceChat.llmBaseUrl, voiceChat.llmModel,
     voiceChat.llmWebSearch, voiceChat.llmApiKey]);
   useEffect(() => { if (!voiceChat.loading && savedLlm === null) setSavedLlm(llmDraft); }, [voiceChat.loading, savedLlm, llmDraft]);
+  const speechDraft = JSON.stringify([speech.asrProvider, speech.asrBaseUrl, speech.asrModel, speech.asrApiKey,
+    speech.ttsProvider, speech.ttsBaseUrl, speech.ttsModel, speech.ttsVoice, speech.ttsApiKey]);
+  useEffect(() => { if (!speech.loading && savedSpeech === null) setSavedSpeech(speechDraft); }, [speech.loading, savedSpeech, speechDraft]);
   const dirty = JSON.stringify(videoConfigs) !== JSON.stringify(savedVideoConfigs)
-    || !!asrApiKey || (savedLlm !== null && savedLlm !== llmDraft);
-  const saving = voiceChat.llmPending || asrState.pending || Object.values(providerPending).some(Boolean);
+    || !!speech.asrApiKey || !!speech.ttsApiKey
+    || (savedLlm !== null && savedLlm !== llmDraft) || (savedSpeech !== null && savedSpeech !== speechDraft);
+  const saving = voiceChat.llmPending || speech.asrPending || speech.ttsPending
+    || Object.values(providerPending).some(Boolean);
   useExitProtection(saving ? "API 配置正在保存或测试" : dirty ? "API 配置有未保存的修改" : "");
 
   const applyVoiceChatStatus = (status, patch = {}) => {
@@ -122,6 +158,49 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       llmApiKeyMasks: status?.llmApiKeyMasks || {},
       llmCustomBaseUrl: status?.llmCustomBaseUrl || "",
     }));
+  };
+
+  // 语音状态统一落位：记录各 scope 最近见过的掩码；豆包识别文案让位给 keyring 读取结果。
+  const applySpeechStatus = (status, patch = {}) => {
+    const asrMasked = status?.asrApiKeyMasked || "";
+    const ttsMasked = status?.ttsApiKeyMasked || "";
+    setSpeech((current) => {
+      const asrProvider = status?.asrProvider || current.asrProvider;
+      const ttsProvider = status?.ttsProvider || current.ttsProvider;
+      const deviceCopyReady = current.asrMessage !== "正在读取语音识别配置…";
+      const asrLabel = ASR_PROVIDER_PRESETS.find((preset) => preset.id === asrProvider)?.label || "该服务商";
+      const asrCopy = asrProvider === "volcengine" && deviceCopyReady ? {}
+        : {
+          asrTone: status?.asrConfigured ? "success" : "muted",
+          asrMessage: asrProvider === "volcengine"
+            ? (status?.asrConfigured ? "豆包语音识别已配置" : "尚未配置豆包语音识别 API Key")
+            : (status?.asrConfigured ? `${asrLabel}语音识别已配置` : "此服务尚未配置 API Key，请填写后保存"),
+        };
+      return {
+        ...current,
+        loading: false,
+        asrProvider,
+        asrModel: status?.asrModel || "",
+        asrBaseUrl: status?.asrBaseUrl || "",
+        asrCustomBaseUrl: asrProvider === "custom" ? (status?.asrBaseUrl || "") : current.asrCustomBaseUrl,
+        asrApiKeyMasked: asrMasked,
+        asrApiKeyMasks: { ...current.asrApiKeyMasks, [speechCredentialScope(asrProvider, status?.asrBaseUrl)]: asrMasked },
+        asrConfigured: status?.asrConfigured === true,
+        ...asrCopy,
+        ttsProvider,
+        ttsModel: status?.ttsModel || "",
+        ttsBaseUrl: status?.ttsBaseUrl || "",
+        ttsCustomBaseUrl: ttsProvider === "custom" ? (status?.ttsBaseUrl || "") : current.ttsCustomBaseUrl,
+        ttsVoice: status?.ttsVoice || "",
+        ttsApiKeyMasked: ttsMasked,
+        ttsApiKeyMasks: { ...current.ttsApiKeyMasks, [speechCredentialScope(ttsProvider, status?.ttsBaseUrl)]: ttsMasked },
+        ttsConfigured: status?.ttsConfigured === true,
+        ttsResourceId: status?.ttsResourceId || current.ttsResourceId,
+        ttsTone: status?.ttsConfigured ? "success" : "muted",
+        ttsMessage: status?.ttsConfigured ? "语音合成已配置" : "选一家服务商，填入 API Key 即可",
+        ...patch,
+      };
+    });
   };
 
   const saveLlm = async () => {
@@ -154,36 +233,48 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
     let cancelled = false;
     invoke("load_voice_chat_settings")
       .then((status) => {
-        if (!cancelled) applyVoiceChatStatus(status, {
-          llmTone: status?.llmConfigured ? "success" : "muted",
-          llmMessage: status?.llmConfigured ? "对话大模型已配置" : "选一家大模型，填入 API Key 即可",
-        });
+        if (!cancelled) {
+          applyVoiceChatStatus(status, {
+            llmTone: status?.llmConfigured ? "success" : "muted",
+            llmMessage: status?.llmConfigured ? "对话大模型已配置" : "选一家大模型，填入 API Key 即可",
+          });
+          applySpeechStatus(status);
+        }
       })
       .catch((error) => {
-        if (!cancelled) setVoiceChat((current) => ({ ...current, loading: false,
-          llmTone: "error", llmMessage: `读取对话模型配置失败：${error}` }));
+        if (!cancelled) {
+          setVoiceChat((current) => ({ ...current, loading: false,
+            llmTone: "error", llmMessage: `读取对话模型配置失败：${error}` }));
+          setSpeech((current) => ({ ...current, loading: false,
+            asrTone: "error", asrMessage: `读取语音识别配置失败：${error}`,
+            ttsTone: "error", ttsMessage: `读取语音合成配置失败：${error}` }));
+        }
       });
     // Independent services: a failed LLM read must not suppress the ASR read.
+    // 豆包（keyring）读取结果只在识别服务商为 volcengine 时呈现。
     invoke("load_device_asr_settings")
       .then((status) => {
         if (cancelled) return;
-        setAsrState({
-          loading: false,
-          pending: false,
-          configured: status?.configured === true,
-          tone: status?.configured ? "success" : "muted",
-          message: status?.message || "尚未配置火山引擎语音识别 API Key",
-        });
+        setSpeech((current) => current.asrProvider !== "volcengine"
+          ? { ...current, loading: false }
+          : {
+            ...current,
+            loading: false,
+            asrConfigured: status?.configured === true,
+            asrTone: status?.configured ? "success" : "muted",
+            asrMessage: status?.message || "尚未配置火山引擎语音识别 API Key",
+          });
       })
       .catch((error) => {
         if (cancelled) return;
-        setAsrState({
-          loading: false,
-          pending: false,
-          configured: false,
-          tone: "error",
-          message: `读取语音识别配置失败：${error}`,
-        });
+        setSpeech((current) => current.asrProvider !== "volcengine"
+          ? { ...current, loading: false }
+          : {
+            ...current,
+            loading: false,
+            asrTone: "error",
+            asrMessage: `读取语音识别配置失败：${error}`,
+          });
       });
     return () => {
       cancelled = true;
@@ -196,8 +287,8 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
     ).length,
     [savedVideoConfigs],
   );
-  const configuredCount = configuredProviderCount + (asrState.configured ? 1 : 0)
-    + (voiceChat.llmConfigured ? 1 : 0);
+  const configuredCount = configuredProviderCount + (speech.asrConfigured ? 1 : 0)
+    + (speech.ttsConfigured ? 1 : 0) + (voiceChat.llmConfigured ? 1 : 0);
 
   const updateProvider = (providerId, patch) => {
     setVideoConfigs((current) => ({
@@ -256,50 +347,112 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
   };
 
   const saveAndTestAsr = async () => {
-    if (!asrState.configured && !asrApiKey.trim()) {
-      setAsrState((current) => ({
+    if (!speech.asrConfigured && !speech.asrApiKey.trim()) {
+      setSpeech((current) => ({
         ...current,
-        tone: "warning",
-        message: "请填写火山引擎语音识别 API Key。",
+        asrTone: "warning",
+        asrMessage: "请填写火山引擎语音识别 API Key。",
       }));
       return;
     }
     let saved = null;
-    setAsrState((current) => ({
+    setSpeech((current) => ({
       ...current,
-      pending: true,
-      tone: "muted",
-      message: "正在保存并测试语音识别服务…",
+      asrPending: true,
+      asrTone: "muted",
+      asrMessage: "正在保存并测试语音识别服务…",
     }));
     try {
       saved = await invoke("save_device_asr_settings", {
         input: {
-          apiKey: asrApiKey.trim() || null,
+          apiKey: speech.asrApiKey.trim() || null,
         },
       });
       emitApiConfigurationUpdated({
         providerId: "volcengine-asr",
         configured: saved?.configured === true,
       });
-      setAsrApiKey("");
       const probe = await invoke("test_device_asr_settings");
-      setAsrApiKey("");
-      setAsrState({
-        loading: false,
-        pending: false,
-        configured: saved?.configured === true,
-        tone: "success",
-        message: `Key 已保存，语音识别测试通过（${probe?.latencyMs ?? 0} ms）。可到「人设与声音」试听，检查语音合成是否可用。`,
-      });
-    } catch (error) {
-      setAsrState((current) => ({
+      setSpeech((current) => ({
         ...current,
-        loading: false,
-        pending: false,
-        configured: saved?.configured === true || current.configured,
-        tone: "error",
-        message: `${saved ? "共享 Key 已保存，但识别测试失败" : "保存失败"}：${error}`,
+        asrPending: false,
+        asrApiKey: "",
+        asrConfigured: saved?.configured === true,
+        asrTone: "success",
+        asrMessage: `Key 已保存，语音识别测试通过（${probe?.latencyMs ?? 0} ms）。可到「人设与声音」试听，检查语音合成是否可用。`,
       }));
+    } catch (error) {
+      setSpeech((current) => ({
+        ...current,
+        asrPending: false,
+        asrApiKey: "",
+        asrConfigured: saved?.configured === true || current.asrConfigured,
+        asrTone: "error",
+        asrMessage: `${saved ? "共享 Key 已保存，但识别测试失败" : "保存失败"}：${error}`,
+      }));
+    }
+  };
+
+  // 非豆包识别服务商：走 save_voice_chat_settings，凭据按 asr_provider 的 scope 入库。
+  const saveSpeechAsr = async () => {
+    if (speech.asrProvider === "volcengine") return saveAndTestAsr();
+    if (!speech.asrConfigured && !speech.asrApiKey.trim()) {
+      setSpeech((current) => ({ ...current, asrTone: "warning", asrMessage: "请填写 API Key。" }));
+      return;
+    }
+    setSpeech((current) => ({ ...current, asrPending: true, asrTone: "muted", asrMessage: "正在保存语音识别配置…" }));
+    try {
+      const status = await invoke("save_voice_chat_settings", {
+        input: {
+          asrProvider: speech.asrProvider,
+          asrModel: speech.asrModel.trim(),
+          asrBaseUrl: speech.asrProvider === "custom" ? speech.asrBaseUrl.trim() : null,
+          asrApiKey: speech.asrApiKey.trim() || null,
+        },
+      });
+      emitApiConfigurationUpdated({ providerId: "voice-asr", configured: status?.asrConfigured === true });
+      applySpeechStatus(status, {
+        asrPending: false,
+        asrApiKey: "",
+        asrTone: status?.asrConfigured ? "success" : "warning",
+        asrMessage: status?.asrConfigured ? "配置已保存，开始语音输入时将使用所选服务商。" : "已保存，但还没有 API Key",
+      });
+      setSavedSpeech(null);
+    } catch (error) {
+      setSpeech((current) => ({ ...current, asrPending: false, asrTone: "error", asrMessage: `保存失败：${error}` }));
+    }
+  };
+
+  // 非豆包合成服务商：同一服务商识别/合成共用一把 Key。
+  const saveSpeechTts = async () => {
+    if (speech.ttsProvider === "volcengine") return;
+    if (!speech.ttsConfigured && !speech.ttsApiKey.trim()) {
+      setSpeech((current) => ({ ...current, ttsTone: "warning", ttsMessage: "请填写 API Key。" }));
+      return;
+    }
+    setSpeech((current) => ({ ...current, ttsPending: true, ttsTone: "muted", ttsMessage: "正在保存语音合成配置…" }));
+    try {
+      const status = await invoke("save_voice_chat_settings", {
+        input: {
+          ttsProvider: speech.ttsProvider,
+          ttsModel: speech.ttsModel.trim(),
+          ttsVoice: speech.ttsVoice.trim(),
+          ttsBaseUrl: speech.ttsProvider === "custom" ? speech.ttsBaseUrl.trim() : null,
+          ttsSpeechKey: speech.ttsApiKey.trim() || null,
+        },
+      });
+      emitApiConfigurationUpdated({ providerId: "voice-tts", configured: status?.ttsConfigured === true });
+      applySpeechStatus(status, {
+        ttsPending: false,
+        ttsApiKey: "",
+        ttsTone: status?.ttsConfigured ? "success" : "warning",
+        ttsMessage: status?.ttsConfigured
+          ? `已保存 ${status?.ttsApiKeyMasked}；同一服务商识别/合成共用一把 Key。`
+          : "已保存，但还没有 API Key",
+      });
+      setSavedSpeech(null);
+    } catch (error) {
+      setSpeech((current) => ({ ...current, ttsPending: false, ttsTone: "error", ttsMessage: `保存失败：${error}` }));
     }
   };
 
@@ -333,7 +486,7 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
           <ShieldCheck size={22} />
         </div>
         <div className="api-settings__overview-copy">
-          <strong>{configReadError ? "已有配置暂时无法读取（不是配置丢失）" : `${configuredCount} / ${VIDEO_PROVIDERS.length + 2} 项凭据已配置`}</strong>
+          <strong>{configReadError ? "已有配置暂时无法读取（不是配置丢失）" : `${configuredCount} / ${VIDEO_PROVIDERS.length + 3} 项凭据已配置`}</strong>
           <span>按需配置即可：给 Agent 语音输入只需语音识别；和宠物聊天还需语音合成与对话大模型；生成形象需配置形象生成服务。</span>
         </div>
         <div className="api-settings__storage-note">
@@ -343,63 +496,267 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       </section>
 
       <Card
-        title="语音识别与合成"
+        title="语音识别"
         subtitle={(
           <>
-            让设备听懂你说的话，并让宠物开口回应。识别与合成共用一个 API Key。
-            <a
-              className="api-settings__credential-link"
-              href="https://docs.volcengine.com/docs/DoubaoVoice/APIKeyUsage?lang=zh"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Key 获取方式
-              <ExternalLink size={11} aria-hidden="true" />
-            </a>
+            让设备听懂你说的话。
+            {speech.asrProvider === "volcengine" && (
+              <a
+                className="api-settings__credential-link"
+                href="https://docs.volcengine.com/docs/DoubaoVoice/APIKeyUsage?lang=zh"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Key 获取方式
+                <ExternalLink size={11} aria-hidden="true" />
+              </a>
+            )}
           </>
         )}
         actions={(
-          <span className={`api-settings__status${asrState.configured ? " is-success" : ""}`}>
-            {asrState.loading ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
-            {asrState.loading ? "读取中" : asrState.configured ? "已配置" : "未配置"}
+          <span className={`api-settings__status${speech.asrConfigured ? " is-success" : ""}`}>
+            {speech.loading ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
+            {speech.loading ? "读取中" : speech.asrConfigured ? "已配置" : "未配置"}
           </span>
         )}
       >
         <div className="usage-help">
           <p><strong>语音输入：</strong>{usageHelp.voice} {usageHelp.confirm}</p>
-          <p><strong>实时对话：</strong>{usageHelp.chat} 还需配置下方「对话大模型」。</p>
+          <p><strong>实时对话：</strong>{usageHelp.chat} 还需配置下方「语音合成」和「对话大模型」。</p>
           {usageHelp.pending && <p className="usage-help__notice">按键配置有修改，请先同步到设备。</p>}
-          <details><summary>使用前需要什么</summary><p>请保持设备连接电脑，并让 Pet Manager 持续运行。默认使用豆包 ASR 2.0 和 TTS 2.0，请为该 Key 开通对应服务。</p></details>
+          <details><summary>使用前需要什么</summary><p>请保持设备连接电脑，并让 Pet Manager 持续运行。默认使用豆包 ASR 2.0 和 TTS 2.0；更换服务商后，每个服务商需分别配置 API Key。</p></details>
         </div>
-        <div className="api-settings__form api-settings__form--speech">
-          <label className="ui-field" htmlFor="api-settings-asr-key">
-            <span className="ui-field__label">语音 API Key（识别与合成共用）</span>
-            <input
-              id="api-settings-asr-key"
-              className="ui-control api-settings__secret-input"
-              type={showSecrets ? "text" : "password"}
-              autoComplete="new-password"
-              value={asrApiKey}
-              onChange={(event) => setAsrApiKey(event.target.value)}
-              placeholder={asrState.configured ? "已安全保存；留空可直接复测" : "输入火山引擎豆包语音 API Key"}
-              disabled={asrState.pending || asrState.loading}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn-primary btn-sm api-settings__save"
-            onClick={saveAndTestAsr}
-            disabled={asrState.pending || asrState.loading}
-          >
-            {asrState.pending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-            保存并测试
-          </button>
+        <div className="api-settings__presets" role="radiogroup" aria-label="语音识别服务商">
+          {ASR_PROVIDER_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              role="radio"
+              aria-checked={speech.asrProvider === preset.id}
+              className={"btn-ghost btn-sm api-settings__preset" + (speech.asrProvider === preset.id ? " is-active" : "")}
+              onClick={() => setSpeech((current) => selectAsrProvider(current, preset.id))}
+              disabled={speech.asrPending || speech.loading}
+            >
+              {preset.label}
+            </button>
+          ))}
         </div>
-        <div className={`api-settings__result${resultToneClass(asrState.tone)}`} role="status">
-          {asrState.tone === "error" || asrState.tone === "warning"
+        {speech.asrProvider === "mimo" ? (
+          <p className="api-settings__preset-summary muted small">MiMo 暂不支持语音识别，请选择其他服务商。</p>
+        ) : speech.asrProvider === "volcengine" ? (
+          <div className="api-settings__form api-settings__form--speech">
+            <label className="ui-field" htmlFor="api-settings-asr-key">
+              <span className="ui-field__label">API Key（识别与合成共用）</span>
+              <input
+                id="api-settings-asr-key"
+                className="ui-control api-settings__secret-input"
+                type={showSecrets ? "text" : "password"}
+                autoComplete="new-password"
+                value={speech.asrApiKey}
+                onChange={(event) => setSpeech((current) => ({ ...current, asrApiKey: event.target.value }))}
+                placeholder={speech.asrConfigured ? "已安全保存；留空可直接复测" : "输入火山引擎豆包语音 API Key"}
+                disabled={speech.asrPending || speech.loading}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn-primary btn-sm api-settings__save"
+              onClick={saveAndTestAsr}
+              disabled={speech.asrPending || speech.loading}
+            >
+              {speech.asrPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+              保存并测试
+            </button>
+          </div>
+        ) : (
+          <div className="api-settings__form api-settings__form--asr">
+            {speech.asrProvider === "custom" && (
+              <label className="ui-field" htmlFor="api-settings-asr-url">
+                <span className="ui-field__label">接口地址（OpenAI 兼容）</span>
+                <input
+                  id="api-settings-asr-url"
+                  className="ui-control"
+                  value={speech.asrBaseUrl}
+                  onChange={(event) => setSpeech((current) => changeAsrEndpoint(current, event.target.value))}
+                  placeholder="https://your-endpoint/v1"
+                  disabled={speech.asrPending || speech.loading}
+                />
+              </label>
+            )}
+            <label className="ui-field" htmlFor="api-settings-asr-model">
+              <span className="ui-field__label">模型名称</span>
+              <input
+                id="api-settings-asr-model"
+                className="ui-control"
+                value={speech.asrModel}
+                onChange={(event) => setSpeech((current) => ({ ...current, asrModel: event.target.value }))}
+                placeholder={ASR_PROVIDER_PRESETS.find((preset) => preset.id === speech.asrProvider)?.model || "填写服务商的识别模型"}
+                disabled={speech.asrPending || speech.loading}
+              />
+              <span className="muted small">已按服务商填入默认模型，可改为账号已开通的模型。</span>
+            </label>
+            <label className="ui-field" htmlFor="api-settings-asr-speech-key">
+              <span className="ui-field__label">API Key</span>
+              <input
+                id="api-settings-asr-speech-key"
+                className="ui-control api-settings__secret-input"
+                type={showSecrets ? "text" : "password"}
+                autoComplete="new-password"
+                value={speech.asrApiKey}
+                onChange={(event) => setSpeech((current) => ({ ...current, asrApiKey: event.target.value }))}
+                placeholder={speech.asrApiKeyMasked ? `已保存 ${speech.asrApiKeyMasked}；留空保持不变` : "粘贴这家服务商的 API Key"}
+                disabled={speech.asrPending || speech.loading}
+              />
+            </label>
+            <button
+              type="button"
+              className="btn-primary btn-sm api-settings__save"
+              onClick={saveSpeechAsr}
+              disabled={speech.asrPending || speech.loading}
+            >
+              {speech.asrPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+              保存
+            </button>
+          </div>
+        )}
+        {speech.asrProvider !== "mimo" && (
+          <div className={`api-settings__result${resultToneClass(speech.asrTone)}`} role="status">
+            {speech.asrTone === "error" || speech.asrTone === "warning"
+              ? <AlertCircle size={13} />
+              : <CheckCircle2 size={13} />}
+            {speech.asrMessage}
+          </div>
+        )}
+      </Card>
+
+      <Card
+        title="语音合成"
+        subtitle="让宠物开口回应。同一服务商的识别与合成共用一个 API Key。"
+        actions={(
+          <span className={`api-settings__status${speech.ttsConfigured ? " is-success" : ""}`}>
+            {speech.loading ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
+            {speech.loading ? "读取中" : speech.ttsConfigured ? "已配置" : "未配置"}
+          </span>
+        )}
+      >
+        <div className="api-settings__presets" role="radiogroup" aria-label="语音合成服务商">
+          {TTS_PROVIDER_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              role="radio"
+              aria-checked={speech.ttsProvider === preset.id}
+              className={"btn-ghost btn-sm api-settings__preset" + (speech.ttsProvider === preset.id ? " is-active" : "")}
+              onClick={() => setSpeech((current) => selectTtsProvider(current, preset.id))}
+              disabled={speech.ttsPending || speech.loading}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+        {speech.ttsProvider === "volcengine" ? (
+          <div className="api-settings__preset-summary muted small">
+            豆包语音合成与识别共用一把 Key；资源编号 {speech.ttsResourceId || "seed-tts-2.0"}。音色跟随「人设与声音」里的形象配置。
+          </div>
+        ) : (
+          <div className="api-settings__form api-settings__form--asr">
+            {speech.ttsProvider === "custom" && (
+              <label className="ui-field" htmlFor="api-settings-tts-url">
+                <span className="ui-field__label">接口地址（OpenAI 兼容）</span>
+                <input
+                  id="api-settings-tts-url"
+                  className="ui-control"
+                  value={speech.ttsBaseUrl}
+                  onChange={(event) => setSpeech((current) => changeTtsEndpoint(current, event.target.value))}
+                  placeholder="https://your-endpoint/v1"
+                  disabled={speech.ttsPending || speech.loading}
+                />
+              </label>
+            )}
+            <label className="ui-field" htmlFor="api-settings-tts-model">
+              <span className="ui-field__label">模型名称</span>
+              <input
+                id="api-settings-tts-model"
+                className="ui-control"
+                value={speech.ttsModel}
+                onChange={(event) => setSpeech((current) => ({ ...current, ttsModel: event.target.value }))}
+                placeholder={TTS_PROVIDER_PRESETS.find((preset) => preset.id === speech.ttsProvider)?.model || "填写服务商的合成模型"}
+                disabled={speech.ttsPending || speech.loading}
+              />
+              <span className="muted small">已按服务商填入默认模型，可改为账号已开通的模型。</span>
+            </label>
+            <label className="ui-field" htmlFor="api-settings-tts-voice">
+              <span className="ui-field__label">默认音色</span>
+              {speech.ttsProvider === "dashscope" ? (
+                <>
+                  <select
+                    id="api-settings-tts-voice"
+                    className="ui-control"
+                    value={DASHSCOPE_TTS_VOICES.includes(speech.ttsVoice) ? speech.ttsVoice : "__custom__"}
+                    onChange={(event) => setSpeech((current) => ({
+                      ...current,
+                      ttsVoice: event.target.value === "__custom__" ? "" : event.target.value,
+                    }))}
+                    disabled={speech.ttsPending || speech.loading}
+                  >
+                    {DASHSCOPE_TTS_VOICES.map((voice) => (
+                      <option key={voice} value={voice}>{voice}</option>
+                    ))}
+                    <option value="__custom__">自定义…</option>
+                  </select>
+                  {!DASHSCOPE_TTS_VOICES.includes(speech.ttsVoice) && (
+                    <input
+                      id="api-settings-tts-voice-custom"
+                      className="ui-control"
+                      value={speech.ttsVoice}
+                      onChange={(event) => setSpeech((current) => ({ ...current, ttsVoice: event.target.value }))}
+                      placeholder="填写服务商的音色 ID"
+                      disabled={speech.ttsPending || speech.loading}
+                    />
+                  )}
+                </>
+              ) : (
+                <input
+                  id="api-settings-tts-voice"
+                  className="ui-control"
+                  value={speech.ttsVoice}
+                  onChange={(event) => setSpeech((current) => ({ ...current, ttsVoice: event.target.value }))}
+                  placeholder="填写服务商的音色 ID"
+                  disabled={speech.ttsPending || speech.loading}
+                />
+              )}
+              <span className="muted small">形象未单独选择音色时使用；豆包音色始终跟随形象配置。</span>
+            </label>
+            <label className="ui-field" htmlFor="api-settings-tts-key">
+              <span className="ui-field__label">API Key</span>
+              <input
+                id="api-settings-tts-key"
+                className="ui-control api-settings__secret-input"
+                type={showSecrets ? "text" : "password"}
+                autoComplete="new-password"
+                value={speech.ttsApiKey}
+                onChange={(event) => setSpeech((current) => ({ ...current, ttsApiKey: event.target.value }))}
+                placeholder={speech.ttsApiKeyMasked ? `已保存 ${speech.ttsApiKeyMasked}；留空保持不变` : "粘贴这家服务商的 API Key"}
+                disabled={speech.ttsPending || speech.loading}
+              />
+              <span className="muted small">同一服务商识别/合成共用一把 Key。</span>
+            </label>
+            <button
+              type="button"
+              className="btn-primary btn-sm api-settings__save"
+              onClick={saveSpeechTts}
+              disabled={speech.ttsPending || speech.loading}
+            >
+              {speech.ttsPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+              保存
+            </button>
+          </div>
+        )}
+        <div className={`api-settings__result${resultToneClass(speech.ttsTone)}`} role="status">
+          {speech.ttsTone === "error" || speech.ttsTone === "warning"
             ? <AlertCircle size={13} />
             : <CheckCircle2 size={13} />}
-          {asrState.message}
+          {speech.ttsMessage}
         </div>
       </Card>
 

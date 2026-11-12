@@ -25,8 +25,18 @@ test('saving ASR on another tab restores listening using the newly persisted con
 test('other providers, incomplete saves and missing detail never arm the microphone',()=>{
   const target=new EventTarget();let starts=0;
   const dispose=subscribeAsrCredentialUpdates(target,()=>starts++);
-  for(const detail of [undefined,{}, {providerId:'voice-chat-llm',configured:true},{providerId:'volcengine-asr',configured:false},{providerId:'volcengine-asr'}])emit(target,detail);
+  for(const detail of [undefined,{}, {providerId:'voice-chat-llm',configured:true},{providerId:'volcengine-asr',configured:false},{providerId:'volcengine-asr'},{providerId:'voice-asr',configured:false},{providerId:'voice-tts',configured:true}])emit(target,detail);
   assert.equal(starts,0);dispose();
+});
+test('the generic voice-asr broadcast arms the microphone exactly like the volcengine one',async()=>{
+  const target=new EventTarget();let restores=0;
+  let pending;
+  const dispose=subscribeAsrCredentialUpdates(target,()=>{pending=Promise.resolve().then(()=>{restores++;});});
+  emit(target,{providerId:'voice-asr',configured:true});
+  await pending;
+  assert.equal(restores,1);
+  dispose();emit(target,{providerId:'voice-asr',configured:true});
+  assert.equal(restores,1);
 });
 test('persistent controller owns restoration, while visible panel only refreshes status',()=>{
   const dashboard=readFileSync(new URL('../DeviceDashboard.jsx',import.meta.url),'utf8');
