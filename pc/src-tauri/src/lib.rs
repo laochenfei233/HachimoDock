@@ -3700,13 +3700,14 @@ const BRIDGE_LAUNCH_AGENT_LABEL: &str = "com.petmanager.status-bridge";
 const BRIDGE_WINDOWS_STARTUP_SCRIPT_NAME: &str = "Pet Manager Status Bridge.cmd";
 const USB_STATE_MAX_AGE_MS: u64 = 10 * 60 * 1000;
 const USB_BRIDGE_SCAN_MAX_FILES: usize = 64;
-const KNOWN_USB_STATE_SOURCES: [&str; 6] = [
+const KNOWN_USB_STATE_SOURCES: [&str; 7] = [
     "claude-code",
     "codex",
     "openclaw",
     "mimocode",
     "deepseek-harness",
     "workbuddy",
+    "prism-agent",
 ];
 #[cfg(windows)]
 const CREATE_NO_WINDOW_FLAG: u32 = 0x08000000;
@@ -10240,6 +10241,7 @@ fn normalize_agent_id(value: &str) -> Option<String> {
         "mimo" | "mimo-code" | "mimocode" => Some("mimocode".to_string()),
         "deepseek-harness" | "deepseek" | "dsh" => Some("deepseek-harness".to_string()),
         "workbuddy" | "work-buddy" => Some("workbuddy".to_string()),
+        "prism-agent" | "prism" => Some("prism-agent".to_string()),
         "copilot" | "copilot-cli" => Some("copilot-cli".to_string()),
         "gemini" | "gemini-cli" => Some("gemini-cli".to_string()),
         "cursor" => Some("cursor".to_string()),
@@ -10723,6 +10725,9 @@ fn score_usb_source(source: &str) -> i32 {
         // breaks exact state/ts ties between sources.
         "codex" => 30,
         "deepseek-harness" => 25,
+        // Prism is the DeepSeek Harness fork on the same session bus; rank it
+        // just below DSH so a same-timestamp tie still prefers DSH.
+        "prism-agent" => 24,
         "claude-code" => 20,
         "mimocode" => 15,
         "workbuddy" => 15,
@@ -10779,6 +10784,7 @@ fn usb_source_display_name(source: &str) -> String {
         "mimo" | "mimo-code" | "mimocode" => "MiMoCode".to_string(),
         "deepseek-harness" | "deepseek" | "dsh" => "DeepSeek Harness".to_string(),
         "workbuddy" | "work-buddy" => "WorkBuddy".to_string(),
+        "prism-agent" | "prism" => "Prism".to_string(),
         other if !other.is_empty() => other.to_string(),
         _ => "桌宠".to_string(),
     }
@@ -12181,6 +12187,7 @@ fn selected_agent_to_channel_id(value: &str) -> String {
         "mimocode" => "mimocode".to_string(),
         "deepseek-harness" => "deepseek-harness".to_string(),
         "workbuddy" => "workbuddy".to_string(),
+        "prism-agent" => "prism-agent".to_string(),
         _ => DEFAULT_PET_CHANNEL_ID.to_string(),
     }
 }
@@ -12193,6 +12200,7 @@ fn normalize_pet_channel_id(value: String) -> String {
         "mimocode" => "mimocode".to_string(),
         "deepseek-harness" | "deepseek" | "dsh" => "deepseek-harness".to_string(),
         "workbuddy" => "workbuddy".to_string(),
+        "prism-agent" | "prism" => "prism-agent".to_string(),
         "cursor" => "cursor".to_string(),
         _ => DEFAULT_PET_CHANNEL_ID.to_string(),
     }
