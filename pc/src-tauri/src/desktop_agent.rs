@@ -1311,8 +1311,9 @@ mod tests {
         assert_eq!(value["requiresPetSessionBinding"], false);
         assert_eq!(value["automaticPermissionApproval"], false);
         assert!(definition()["function"]["parameters"]["properties"]["operation"]["enum"].as_array().unwrap().contains(&json!("capabilities")));
+        let expected_agents = json!(["codex","workbuddy","zcode"]);
         assert_eq!(definition()["function"]["parameters"]["properties"]["agent"]["enum"].as_array().unwrap(),
-            &json!(["codex","workbuddy","zcode"]).as_array().unwrap());
+            expected_agents.as_array().unwrap());
         assert!(!PROMPT.contains("仅在用户本轮明确委托"));
         for example in ["把桌面的会议记录整理成文档", "todo_manage", "computer_status", "不能擅自换成 Codex", "ZCode", "codex/workbuddy/zcode"] {
             assert!(PROMPT.contains(example));
@@ -1738,8 +1739,10 @@ mod tests {
         apply_event(&mut task,&started);
         assert_eq!(task.state,State::Working);
         assert!(task.seen_user && task.saw_start && task.turn=="turn-z");
-        apply_event(&mut task,&event(&task,"tool.call.started","turn-z"));
-        apply_event(&mut task,&event(&task,"ttft.model.first_content","turn-z"));
+        let tool_call=event(&task,"tool.call.started","turn-z");
+        apply_event(&mut task,&tool_call);
+        let first_content=event(&task,"ttft.model.first_content","turn-z");
+        apply_event(&mut task,&first_content);
         assert_eq!(task.state,State::Working);
         let mut next=event(&task,"turn.started","turn-next");
         next["taskCorrelation"]["userHash"]=json!(request_hash("new instruction"));
@@ -1749,7 +1752,8 @@ mod tests {
         apply_event(&mut task,&next);
         assert_eq!(task.state,State::Working);
         assert!(task.steered_hashes.is_empty());
-        apply_event(&mut task,&event(&task,"turn.completed","turn-z"));
+        let stale_completed=event(&task,"turn.completed","turn-z");
+        apply_event(&mut task,&stale_completed);
         assert_eq!(task.state,State::Done);
         assert_eq!(task.summary,"总结已写好");
         assert_eq!(receipt(&task)["agent"],"zcode");
@@ -1760,7 +1764,8 @@ mod tests {
             started["taskCorrelation"]["turnActive"]=json!(true);
             apply_event(&mut failed,&started);
             assert_eq!(failed.state,State::Working);
-            apply_event(&mut failed,&event(&failed,terminal,"turn-f"));
+            let terminal_event=event(&failed,terminal,"turn-f");
+            apply_event(&mut failed,&terminal_event);
             assert_eq!(failed.state,State::Failed);
         }
     }
