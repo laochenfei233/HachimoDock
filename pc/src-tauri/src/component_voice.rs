@@ -44,10 +44,10 @@ pub(crate) fn configure_preparation(path:std::path::PathBuf){
 }
 /// Last known voice can prepare disk audio before USB connects; it can NEVER
 /// authorize playback. Playback still requires the live CURRENT heartbeat.
-pub(crate) fn preparation_config(board:&str)->Result<crate::doubao_tts::DoubaoTtsConfig,String>{
+pub(crate) fn preparation_config(board:&str)->Result<crate::voice_chat_settings::TtsEngineSetup,String>{
     if !board.is_empty(){return config(board);}
     let voice=PREVIOUS.lock().map_err(|_|"音色缓存不可用")?.clone().ok_or("等待首次选择宠物音色")?;
-    crate::voice_chat_settings::tts_config(&voice.speaker,&voice.clone_speaker_id,voice.speed)
+    crate::voice_chat_settings::tts_engine_with_cache_key(None,&voice.speaker,&voice.clone_speaker_id,voice.speed)
 }
 
 #[tauri::command]
@@ -69,10 +69,10 @@ pub fn component_speech_set_pet_voice(input: Option<PetVoice>) -> Result<(), Str
 pub fn ready(board: &str) -> bool {
     CURRENT.lock().ok().and_then(|v| v.voice(board, Instant::now())).is_some()
 }
-pub fn config(board: &str) -> Result<crate::doubao_tts::DoubaoTtsConfig, String> {
+pub fn config(board: &str) -> Result<crate::voice_chat_settings::TtsEngineSetup, String> {
     let voice = CURRENT.lock().map_err(|_| "宠物音色暂不可用")?
         .voice(board, Instant::now()).ok_or("正在等待当前宠物音色，请保持客户端运行")?;
-    crate::voice_chat_settings::tts_config(&voice.speaker, &voice.clone_speaker_id, voice.speed)
+    crate::voice_chat_settings::tts_engine_with_cache_key(None, &voice.speaker, &voice.clone_speaker_id, voice.speed)
 }
 
 #[cfg(test)]

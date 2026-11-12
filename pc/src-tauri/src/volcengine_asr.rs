@@ -578,6 +578,18 @@ impl Drop for StreamingSpeechRecognizer {
 }
 
 pub fn settings_status() -> Result<DeviceAsrSettingsStatus, String> {
+    // 非豆包服务商：本模块的凭据库只存豆包 Key，其他服务商的就绪状态读 voice_chat_settings。
+    // global_asr_provider / speech_asr_key_ready 仅 load()，不会递归回 status/migrate。
+    if crate::voice_chat_settings::global_asr_provider().as_deref() != Ok("volcengine") {
+        let configured = crate::voice_chat_settings::speech_asr_key_ready().unwrap_or(false);
+        return Ok(public_status(
+            configured,
+            DEFAULT_RESOURCE_ID.to_string(),
+            if configured { "local" } else { "none" },
+            if configured { "当前语音识别服务商已配置" } else { "请先在 API 配置保存当前服务商的语音识别 API Key" },
+        ));
+    }
+
     if let Some(config) = runtime_config_from_env() {
         return Ok(public_status(
             true,
@@ -642,6 +654,10 @@ pub fn save_settings(input: DeviceAsrSettingsInput) -> Result<DeviceAsrSettingsS
 }
 
 pub async fn probe_saved_settings() -> Result<DeviceAsrProbeStatus, String> {
+    // 探测走豆包 WebSocket；其他服务商没有等效探测通道，先读服务商再动任何豆包资源。
+    if crate::voice_chat_settings::global_asr_provider().as_deref() != Ok("volcengine") {
+        return Err("当前语音识别服务商不是豆包，无需探测".into());
+    }
     let config = load_runtime_config()?;
     let started = Instant::now();
     let (mut socket, log_id) = connect_cloud_socket(&config).await?;
@@ -691,6 +707,16 @@ pub async fn probe_saved_settings() -> Result<DeviceAsrProbeStatus, String> {
     Ok(status)
 }
 
+/// 当前全局 ASR 服务商 id（静态标签）。豆包为默认，未知/未初始化一律回落豆包。
+fn global_provider_label() -> &'static str {
+    match crate::voice_chat_settings::global_asr_provider().as_deref() {
+        Ok("dashscope") => "dashscope",
+        Ok("mimo") => "mimo",
+        Ok("custom") => "custom",
+        _ => "volcengine",
+    }
+}
+
 fn public_status(
     configured: bool,
     resource_id: String,
@@ -700,7 +726,7 @@ fn public_status(
     DeviceAsrSettingsStatus {
         configured,
         deferred: false,
-        provider: "volcengine",
+        provider: global_provider_label(),
         mode: "bigmodel-async-device-pcm",
         endpoint: DEFAULT_ENDPOINT,
         resource_id,

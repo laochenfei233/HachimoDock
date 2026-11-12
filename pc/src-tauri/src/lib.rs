@@ -154,6 +154,12 @@ mod usb_serial;
 mod appearance_recovery_ipc;
 mod voice_chat_settings;
 mod volcengine_asr;
+mod speech;
+mod openai_audio;
+mod dashscope_tts;
+mod mimo_tts;
+mod dashscope_asr;
+mod asr_engine;
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering as VersionOrdering;
@@ -888,7 +894,7 @@ const DSH_PENDING_PCM_CHUNKS: usize = 512;
 
 #[derive(Default)]
 struct DeviceVoiceInput {
-    recognizer: Option<pc_audio::StreamingSpeechRecognizer>,
+    recognizer: Option<Box<dyn crate::speech::SpeechRecognizer>>,
     pending_pcm: Vec<Vec<u8>>,
     pending_bytes: usize,
     next_sequence: u64,
@@ -2618,7 +2624,7 @@ fn continue_device_voice_context_start(context: Arc<DeviceVoiceContext>, agent_i
     }
 
     let recognizer_context = Arc::downgrade(&context);
-    match pc_audio::StreamingSpeechRecognizer::start(move |event| {
+    match crate::asr_engine::create(move |event| {
         let Some(context) = recognizer_context.upgrade() else {
             return;
         };
@@ -13876,7 +13882,7 @@ mod tests {
         assert!(guard < startup.find("continue_device_voice_context_start(").unwrap());
         let continuation = source.split_once("\nfn continue_device_voice_context_start(").unwrap().1
             .split("\nfn ").next().unwrap();
-        assert!(continuation.contains("pc_audio::StreamingSpeechRecognizer::start"));
+        assert!(continuation.contains("asr_engine::create"));
     }
 
     #[test]
@@ -14891,7 +14897,7 @@ mod tests {
             .find("pet-visible-composer-startup")
             .expect("visible composer startup thread");
         let recognizer_start = source
-            .find("pc_audio::StreamingSpeechRecognizer::start")
+            .find("asr_engine::create")
             .expect("streaming recognizer startup");
         assert!(startup_thread < recognizer_start);
         assert!(source.contains("wait_for_visible_composer_startup(&context)"));

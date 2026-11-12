@@ -11326,7 +11326,7 @@ manager.activate_memory_test_connection();
         let package=PathBuf::from(std::env::var("PET_KNOWLEDGE_PACKAGE").unwrap());
         let entry=crate::component_library::inspect(&package).unwrap();assert!(entry.valid);assert_eq!(entry.id,"hachimi-learn");
         let config=PathBuf::from(std::env::var("P4_SERVICE_CONFIG").unwrap());
-        crate::volcengine_asr::configure_storage_dir(config.clone()).unwrap();
+        #[cfg(target_os="macos")]crate::volcengine_asr::configure_storage_dir(config.clone()).unwrap(); // configure_storage_dir 仅 macOS 存在（Windows 走凭据库）
         crate::voice_chat_settings::configure_storage_dir(config).unwrap();
         let volume=(crate::voice_chat_settings::realtime_volume().unwrap().clamp(0.0,0.35)*100.0)as u32;
         let usb=UsbSerialManager::new();let(tx,rx)=mpsc::channel();

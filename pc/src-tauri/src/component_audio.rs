@@ -9,7 +9,7 @@ mod speech_queue;
 mod speech_cache;
 pub use speech_queue::SpeechItem;
 pub(crate) fn configure_speech_cache(root:std::path::PathBuf){speech_cache::configure(root);}
-pub(crate) fn prepare_news_voice(id:&str,board:&str,cfg:crate::doubao_tts::DoubaoTtsConfig,items:Vec<SpeechItem>){speech_cache::prepare(id,board,cfg,items);}
+pub(crate) fn prepare_news_voice(id:&str,board:&str,setup:crate::voice_chat_settings::TtsEngineSetup,items:Vec<SpeechItem>){speech_cache::prepare(id,board,setup,items);}
 struct Job{owner:crate::component_app::MediaAuthority,id:String,board:String,session:String,cancel:AtomicBool,volume:AtomicU32,phase:Mutex<String>,error:Mutex<String>,heartbeat:Mutex<Instant>,sound_total:AtomicU32,sound_offset:AtomicU32,speech_key:String,speech_item:Mutex<String>,speech_offset:AtomicU32,speech_gap_ms:AtomicU32}
 static JOB:OnceLock<Mutex<Option<Arc<Job>>>>=OnceLock::new();
 pub(crate) fn active_for_exit()->bool {
@@ -75,10 +75,11 @@ pub fn start(id:&str,usb:&UsbSerialManager,source:Source,volume:u32)->Result<(),
         let result=(||{
             if let Source::SpeechQueue{items,..}=&source{return speech_queue::play(&j,&usb,cfg.unwrap(),items.clone());}
             let pcm=if let Source::Speech(text)=&source{
-                let mut pcm=Vec::new();let mut overflow=false;let mut client=crate::doubao_tts::DoubaoTtsClient::new(cfg.unwrap());
+                let mut pcm=Vec::new();let mut overflow=false;let mut client=cfg.unwrap().engine;
                 let completed=tauri::async_runtime::block_on(async{
                     let result={
-                        let future=client.synthesize(text,|chunk|{if pcm.len()+chunk.len()<=1_920_000{pcm.extend_from_slice(chunk);}else{overflow=true;}});
+                        let mut sink=|chunk: &[u8]|{if pcm.len()+chunk.len()<=1_920_000{pcm.extend_from_slice(chunk);}else{overflow=true;}};
+                        let future=client.synthesize(text,&mut sink);
                         tokio::select!{
                             result=tokio::time::timeout(Duration::from_secs(35),future)=>result.map_err(|_|"朗读生成超时".to_string()).and_then(|v|v.map(|_|true).map_err(|_|"朗读服务失败，请检查语音配置".into())),
                             _=async{while !stopped(&j,&usb){tokio::time::sleep(Duration::from_millis(100)).await;}}=>Ok(false),

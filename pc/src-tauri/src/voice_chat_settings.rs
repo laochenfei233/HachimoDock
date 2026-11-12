@@ -1,8 +1,9 @@
 /*
- * [Input] 对话大模型（DeepSeek / 豆包 / MiMo 预设或自定义 OpenAI 兼容端点）与豆包 Seed TTS 2.0
- *         的凭据；ASR/TTS 共用语音识别凭据存储，旧版独立 TTS Key 仅用于无 ASR Key 时迁移。
+ * [Input] 对话大模型（DeepSeek / 豆包 / MiMo 预设或自定义 OpenAI 兼容端点）、语音识别与合成的
+ *         服务商（豆包 / 通义千问 DashScope / 小米 MiMo / 自定义 OpenAI 兼容）凭据；
+ *         豆包语音 Key 仍存于 volcengine_asr 凭据库，其他服务商按 provider scope 存于本文件。
  * [Output] One authenticated encrypted JSON file under the app data dir (`voice-chat-settings.json`,
- *          local private key on macOS / OS vault on Windows, 0600 on unix), masked status for the UI, and resolved LLM/TTS configs for the realtime chat
+ *          local private key on macOS / OS vault on Windows, 0600 on unix), masked status for the UI, and resolved LLM/TTS/ASR configs for the realtime chat
  *          pipeline. LLM keys are saved per provider (custom keys also per endpoint),
  *          with only masks exposed to the UI. Separate global realtime volume persistence migrates legacy per-pet gain once.
  *          Public builds embed nothing; internal builds may embed defaults.
@@ -111,6 +112,50 @@ fn normalize_provider(value: &str) -> String {
     }
 }
 
+/// 语音服务商预设：与 LLM 预设一样只提供默认值，不是模型白名单。豆包保持默认，存量用户无感。
+pub struct SpeechPreset {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub base_url: &'static str,
+    pub asr_model: &'static str,
+    pub tts_model: &'static str,
+    pub tts_voice: &'static str,
+}
+
+pub const SPEECH_PRESETS: &[SpeechPreset] = &[
+    SpeechPreset { id: "volcengine", label: "豆包（火山引擎）", base_url: "", asr_model: "volc.seedasr.sauc.duration", tts_model: "seed-tts-2.0-standard", tts_voice: "" },
+    SpeechPreset { id: "dashscope", label: "通义千问（百炼）", base_url: "https://dashscope.aliyuncs.com", asr_model: "paraformer-realtime-v2", tts_model: "cosyvoice-v3-flash", tts_voice: "longxiaochun_v3" },
+    SpeechPreset { id: "mimo", label: "小米 MiMo", base_url: "https://api.xiaomimimo.com/v1", asr_model: "", tts_model: "mimo-v2.5-tts", tts_voice: "" },
+];
+pub const DEFAULT_SPEECH_PROVIDER: &str = "volcengine";
+
+pub fn speech_preset(id: &str) -> Option<&'static SpeechPreset> {
+    SPEECH_PRESETS.iter().find(|preset| preset.id == id)
+}
+
+/// 未知服务商一律回落豆包，与 LLM normalize_provider 同策略。
+pub fn normalize_speech_provider(value: &str) -> String {
+    let id = value.trim().to_ascii_lowercase();
+    if id == "custom" || speech_preset(&id).is_some() { id } else { DEFAULT_SPEECH_PROVIDER.to_string() }
+}
+
+/// 形象级 `voice.provider` 值（`""`=跟随全局、`doubao_tts`、`dashscope_tts`、`mimo_tts`、`custom_tts`）
+/// 映射到服务商 id；空或未知返回 None 表示跟随全局。
+pub fn normalize_voice_provider(value: &str) -> Option<String> {
+    let id = value.trim().to_ascii_lowercase();
+    let id = id.strip_suffix("_tts").unwrap_or(&id);
+    (!id.is_empty()).then(|| normalize_speech_provider(id))
+}
+
+fn speech_scope(provider: &str, base_url: &str) -> String {
+    if provider == "custom" {
+        let url = base_url.trim().trim_end_matches('/');
+        format!("custom:{}", if url.is_empty() { "(未填写接口地址)" } else { url })
+    } else {
+        provider.to_string()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VoiceChatSettings {
@@ -123,6 +168,19 @@ pub struct VoiceChatSettings {
     pub llm_api_keys: BTreeMap<String, String>,
     pub llm_custom_base_url: String,
     pub llm_web_search: Option<bool>,
+    /// 语音识别服务商："volcengine" | "dashscope" | "mimo" | "custom"（豆包为默认）。
+    pub asr_provider: String,
+    pub asr_model: String,
+    /// 仅 custom 服务商使用；预设服务商始终用官方端点。
+    pub asr_base_url: String,
+    /// 语音合成服务商（可与 ASR 不同，实现跨商组合）。
+    pub tts_provider: String,
+    pub tts_model: String,
+    pub tts_base_url: String,
+    /// 非豆包服务商的默认合成音色（豆包音色跟随形象配置）。
+    pub tts_voice: String,
+    /// ASR/TTS 共用的按服务商凭据；volcengine 例外——其 Key 继续存于 volcengine_asr 凭据库。
+    pub speech_api_keys: BTreeMap<String, String>,
     pub tts_api_key: String,
     pub tts_resource_id: String,
 }
@@ -135,6 +193,17 @@ pub struct VoiceChatSettingsInput {
     pub llm_model: Option<String>,
     pub llm_api_key: Option<String>,
     pub llm_web_search: Option<bool>,
+    pub asr_provider: Option<String>,
+    pub asr_model: Option<String>,
+    pub asr_base_url: Option<String>,
+    /// 新写入的语音识别 Key；按 asr_provider 的 scope 入库（volcengine 会被忽略，走凭据库）。
+    pub asr_api_key: Option<String>,
+    pub tts_provider: Option<String>,
+    pub tts_model: Option<String>,
+    pub tts_base_url: Option<String>,
+    pub tts_voice: Option<String>,
+    /// 新写入的语音合成 Key；按 tts_provider 的 scope 入库。
+    pub tts_speech_key: Option<String>,
     pub tts_api_key: Option<String>,
     pub tts_resource_id: Option<String>,
 }
@@ -153,6 +222,15 @@ pub struct VoiceChatSettingsStatus {
     pub llm_api_key_masked: String,
     pub llm_api_key_masks: BTreeMap<String, String>,
     pub llm_custom_base_url: String,
+    pub asr_provider: String,
+    pub asr_model: String,
+    pub asr_base_url: String,
+    pub asr_configured: bool,
+    pub asr_api_key_masked: String,
+    pub tts_provider: String,
+    pub tts_model: String,
+    pub tts_base_url: String,
+    pub tts_voice: String,
     pub tts_api_key_masked: String,
     pub tts_resource_id: String,
     pub credential_source: &'static str,
@@ -222,6 +300,7 @@ pub fn load() -> Result<(VoiceChatSettings, &'static str), String> {
         settings.llm_api_key = settings.llm_api_keys.get(&credential_scope(&settings)).cloned().unwrap_or_default();
     }
     apply_llm_defaults(&mut settings);
+    apply_speech_defaults(&mut settings);
     settings.tts_resource_id = TTS_DEFAULT_RESOURCE_ID.to_string();
     Ok((settings, "local"))
 }
@@ -249,12 +328,89 @@ fn apply_llm_defaults(settings: &mut VoiceChatSettings) {
     }
 }
 
+/// 豆包服务商的 Key 与 ASR 共用（存于 volcengine_asr 凭据库）；其他服务商取自己的 scope。
+fn speech_key(settings: &VoiceChatSettings, provider: &str, base_url: &str) -> Option<String> {
+    if provider == "volcengine" {
+        crate::volcengine_asr::stored_api_key()
+    } else {
+        settings.speech_api_keys.get(&speech_scope(provider, base_url))
+            .map(|key| key.trim()).filter(|key| !key.is_empty()).map(str::to_owned)
+    }
+}
+
+fn apply_speech_defaults(settings: &mut VoiceChatSettings) {
+    settings.asr_provider = normalize_speech_provider(&settings.asr_provider);
+    settings.tts_provider = normalize_speech_provider(&settings.tts_provider);
+    for (provider_field, model_field, base_field) in [
+        (&settings.asr_provider, &mut settings.asr_model, &mut settings.asr_base_url),
+        (&settings.tts_provider, &mut settings.tts_model, &mut settings.tts_base_url),
+    ] {
+        let provider = provider_field.clone();
+        if let Some(preset) = speech_preset(&provider) {
+            // 预设服务商保持官方端点；保存的模型名可以改。豆包 ASR 的模型字段即资源 id（展示用）。
+            if model_field.trim().is_empty() { *model_field = preset.asr_model.to_string(); }
+            *base_field = preset.base_url.to_string();
+        }
+    }
+    // 非豆包合成补默认音色；豆包音色跟随形象，不落全局。
+    if settings.tts_provider != "volcengine" && settings.tts_voice.trim().is_empty() {
+        settings.tts_voice = speech_preset(&settings.tts_provider).map(|p| p.tts_voice).unwrap_or("").to_string();
+    }
+}
+
 /// ASR and TTS resolve the same key after legacy migration; no hidden TTS override.
-fn resolve_tts_key(_settings: &VoiceChatSettings) -> (String, bool) {
-    match crate::volcengine_asr::stored_api_key() {
-        Some(key) => (key, true),
+fn resolve_tts_key(settings: &VoiceChatSettings) -> (String, bool) {
+    match speech_key(settings, &settings.tts_provider, &settings.tts_base_url) {
+        Some(key) => (key, settings.tts_provider == "volcengine"),
         None => (String::new(), false),
     }
+}
+
+/// 形象级覆盖（Some(provider)）或全局 TTS 服务商的凭据是否就绪；realtime 启动 gating 用。
+pub fn speech_tts_key_ready(voice_provider: Option<&str>) -> Result<bool, String> {
+    let (settings, _) = load()?;
+    let provider = voice_provider.and_then(normalize_voice_provider)
+        .unwrap_or_else(|| settings.tts_provider.clone());
+    let base = if provider == settings.tts_provider { settings.tts_base_url.clone() } else { speech_preset(&provider).map(|p| p.base_url).unwrap_or("").to_string() };
+    Ok(speech_key(&settings, &provider, &base).is_some())
+}
+
+/// 形象级覆盖（Some(provider)）或全局 ASR 服务商的凭据是否就绪。
+pub fn speech_asr_key_ready() -> Result<bool, String> {
+    let (settings, _) = load()?;
+    Ok(speech_key(&settings, &settings.asr_provider, &settings.asr_base_url).is_some())
+}
+
+/// 全局 ASR 服务商 id（设置面板与 ASR 状态展示用）。
+pub fn global_asr_provider() -> Result<String, String> {
+    let (settings, _) = load()?;
+    Ok(settings.asr_provider)
+}
+
+/// ASR 引擎工厂的输入：服务商 id + 凭据 + 模型/端点。
+pub struct AsrEngineConfig {
+    pub provider: String,
+    pub api_key: String,
+    pub model: String,
+    pub base_url: String,
+    pub language: Option<String>,
+}
+
+pub fn asr_engine_config() -> Result<AsrEngineConfig, String> {
+    let (settings, _) = load()?;
+    let provider = settings.asr_provider.clone();
+    let preset = speech_preset(&provider);
+    let label = preset.map(|p| p.label).unwrap_or("所选服务商");
+    let Some(api_key) = speech_key(&settings, &provider, &settings.asr_base_url) else {
+        return Err(format!("请先在 API 配置保存{label}语音识别的 API Key"));
+    };
+    Ok(AsrEngineConfig {
+        provider,
+        api_key,
+        model: settings.asr_model,
+        base_url: settings.asr_base_url,
+        language: None,
+    })
 }
 
 /// Keep the existing ASR key; migrate a TTS-only installation before removing its old override.
@@ -289,6 +445,7 @@ pub fn status() -> Result<VoiceChatSettingsStatus, String> {
     migrate_shared_speech_key()?;
     let (settings, source) = load()?;
     let (tts_key, tts_uses_asr_key) = resolve_tts_key(&settings);
+    let (asr_masked, tts_masked) = speech_masks(&settings);
     Ok(VoiceChatSettingsStatus {
         llm_web_search: settings.llm_web_search.unwrap_or(true),
         llm_configured: !settings.llm_api_key.trim().is_empty(),
@@ -300,7 +457,16 @@ pub fn status() -> Result<VoiceChatSettingsStatus, String> {
         llm_api_key_masked: mask_secret(&settings.llm_api_key),
         llm_api_key_masks: credential_masks(&settings),
         llm_custom_base_url: settings.llm_custom_base_url.clone(),
-        tts_api_key_masked: mask_secret(&tts_key),
+        asr_provider: settings.asr_provider.clone(),
+        asr_model: settings.asr_model.clone(),
+        asr_base_url: settings.asr_base_url.clone(),
+        asr_configured: !asr_masked.is_empty(),
+        asr_api_key_masked: asr_masked,
+        tts_provider: settings.tts_provider.clone(),
+        tts_model: settings.tts_model.clone(),
+        tts_base_url: settings.tts_base_url.clone(),
+        tts_voice: settings.tts_voice.clone(),
+        tts_api_key_masked: if tts_uses_asr_key { mask_secret(&tts_key) } else { tts_masked },
         tts_resource_id: settings.tts_resource_id.clone(),
         credential_source: source,
     })
@@ -344,6 +510,8 @@ pub fn save(input: VoiceChatSettingsInput) -> Result<VoiceChatSettingsStatus, St
 }
 
 fn merge_settings(mut settings: VoiceChatSettings, input: VoiceChatSettingsInput) -> VoiceChatSettings {
+    // 语音字段先合并：下方 LLM 合并按值解构 input，之后再借用会触发 partial move。
+    merge_speech_settings(&mut settings, &input);
     if let Some(enabled) = input.llm_web_search { settings.llm_web_search = Some(enabled); }
     remember_active_key(&mut settings);
     let previous_scope = credential_scope(&settings);
@@ -385,6 +553,45 @@ fn merge_settings(mut settings: VoiceChatSettings, input: VoiceChatSettingsInput
     settings
 }
 
+/// 语音识别/合成的 provider、模型、端点与按 scope 凭据合并。切换服务商清掉已存模型名
+/// （下一次 load 由预设补默认值），Key 永远只写入本次目标 scope，不跨服务商沿用。
+fn merge_speech_settings(settings: &mut VoiceChatSettings, input: &VoiceChatSettingsInput) {
+    let mut incoming_key = |value: &Option<String>, provider: &str, base: &str| {
+        let trimmed = value.as_deref().unwrap_or("").trim();
+        if trimmed.is_empty() || trimmed.contains('…') || trimmed == "••••" { return; }
+        if provider != "volcengine" {
+            settings.speech_api_keys.insert(speech_scope(provider, base), trimmed.to_string());
+        }
+    };
+    if let Some(value) = &input.asr_provider {
+        let provider = normalize_speech_provider(value);
+        if settings.asr_provider != provider { settings.asr_model.clear(); }
+        settings.asr_provider = provider;
+    }
+    if let Some(value) = &input.asr_model { settings.asr_model = value.trim().to_string(); }
+    if let Some(value) = &input.asr_base_url { settings.asr_base_url = value.trim().to_string(); }
+    let asr_provider = settings.asr_provider.clone();
+    incoming_key(&input.asr_api_key, &asr_provider, &settings.asr_base_url);
+    if let Some(value) = &input.tts_provider {
+        let provider = normalize_speech_provider(value);
+        if settings.tts_provider != provider { settings.tts_model.clear(); }
+        settings.tts_provider = provider;
+    }
+    if let Some(value) = &input.tts_model { settings.tts_model = value.trim().to_string(); }
+    if let Some(value) = &input.tts_base_url { settings.tts_base_url = value.trim().to_string(); }
+    if let Some(value) = &input.tts_voice { settings.tts_voice = value.trim().to_string(); }
+    let tts_provider = settings.tts_provider.clone();
+    incoming_key(&input.tts_speech_key, &tts_provider, &settings.tts_base_url);
+}
+
+/// 当前 TTS/ASR 服务商 scope 的掩码（豆包 = 凭据库 Key）。
+fn speech_masks(settings: &VoiceChatSettings) -> (String, String) {
+    let mask = |key: &Option<String>| mask_secret(key.as_deref().unwrap_or(""));
+    let asr = mask(&speech_key(settings, &settings.asr_provider, &settings.asr_base_url));
+    let tts = mask(&speech_key(settings, &settings.tts_provider, &settings.tts_base_url));
+    (asr, tts)
+}
+
 pub fn clear_secret(which: &str) -> Result<VoiceChatSettingsStatus, String> {
     let guard = SETTINGS_MUTATION.lock().map_err(|_| "语音配置繁忙")?;
     let path = settings_path()?;
@@ -394,7 +601,15 @@ pub fn clear_secret(which: &str) -> Result<VoiceChatSettingsStatus, String> {
             settings.llm_api_keys.remove(&credential_scope(&settings));
             settings.llm_api_key.clear();
         },
-        "tts" => settings.tts_api_key.clear(),
+        // 豆包服务商的 Key 在 volcengine_asr 凭据库，走 save_device_asr_settings 清除；
+        // 这里清的是其他服务商 scope 与旧版遗留字段。
+        "asr" => {
+            settings.speech_api_keys.remove(&speech_scope(&settings.asr_provider, &settings.asr_base_url));
+        },
+        "tts" => {
+            settings.speech_api_keys.remove(&speech_scope(&settings.tts_provider, &settings.tts_base_url));
+            settings.tts_api_key.clear();
+        },
         _ => return Err("unknown secret".to_string()),
     }
     write_file(&path, &settings)?;
@@ -493,6 +708,88 @@ pub fn tts_config(speaker: &str, clone_speaker_id: &str, speed: f32) -> Result<D
         speed,
         &settings.tts_resource_id,
     ))
+}
+
+/// 豆包风格的音色 id 对其他服务商无效：回退到该服务商默认音色（组件语音/新闻读书场景）。
+fn effective_tts_voice(speaker: &str, default_voice: &str) -> String {
+    let speaker = speaker.trim();
+    if speaker.is_empty() || speaker.contains("bigtts") || speaker.contains("icl") {
+        default_voice.trim().to_string()
+    } else {
+        speaker.to_string()
+    }
+}
+
+/// 引擎 + 同源缓存键：组件语音/新闻预热用同一个描述符做磁盘缓存签名，保证
+/// 豆包沿用旧 `news-pcm16-v1` 键格式（存量磁盘缓存继续有效）。
+pub struct TtsEngineSetup {
+    pub engine: Box<dyn crate::speech::TtsEngine>,
+    pub cache_key: String,
+}
+
+/// 旧新闻缓存 voice_key：仅豆包使用，格式不可改，否则磁盘缓存全部失效。
+pub(crate) fn doubao_voice_key(cfg: &DoubaoTtsConfig) -> String {
+    // Credential rotation must not invalidate identical public voice audio.
+    format!("news-pcm16-v1|{}|{}|{}|{}|{}", cfg.ws_url, cfg.resource_id, cfg.model, cfg.speaker, cfg.speed.to_bits())
+}
+
+/// 多服务商 TTS 引擎工厂：解析形象级 provider 覆盖（否则全局）、凭据、模型与音色。
+/// 返回的引擎统一输出 16 kHz 单声道 S16LE PCM。
+pub fn tts_engine(voice_provider: Option<&str>, speaker: &str, clone_speaker_id: &str, speed: f32)
+    -> Result<Box<dyn crate::speech::TtsEngine>, String> {
+    Ok(tts_engine_with_cache_key(voice_provider, speaker, clone_speaker_id, speed)?.engine)
+}
+
+pub fn tts_engine_with_cache_key(voice_provider: Option<&str>, speaker: &str, clone_speaker_id: &str, speed: f32)
+    -> Result<TtsEngineSetup, String> {
+    let (settings, _) = load()?;
+    let provider = normalize_voice_provider(voice_provider.unwrap_or(""))
+        .unwrap_or_else(|| settings.tts_provider.clone());
+    let preset = speech_preset(&provider);
+    let label = preset.map(|p| p.label).unwrap_or("所选服务商");
+    let base = if provider == settings.tts_provider {
+        settings.tts_base_url.clone()
+    } else {
+        preset.map(|p| p.base_url).unwrap_or("").to_string()
+    };
+    let model = if provider == settings.tts_provider && !settings.tts_model.trim().is_empty() {
+        settings.tts_model.clone()
+    } else {
+        preset.map(|p| p.tts_model).unwrap_or("").to_string()
+    };
+    let Some(key) = speech_key(&settings, &provider, &base) else {
+        return Err(format!("请先在 API 配置保存{label}语音合成的 API Key"));
+    };
+    match provider.as_str() {
+        "volcengine" => {
+            let cfg = tts_config(speaker, clone_speaker_id, speed)?;
+            let cache_key = doubao_voice_key(&cfg);
+            Ok(TtsEngineSetup { engine: Box::new(crate::doubao_tts::DoubaoTtsClient::new(cfg)), cache_key })
+        },
+        "dashscope" => {
+            let voice = effective_tts_voice(speaker, &settings.tts_voice);
+            let engine = Box::new(crate::dashscope_tts::DashscopeTtsClient::new(
+                key, base, model.clone(), voice.clone(),
+            ));
+            Ok(TtsEngineSetup { engine, cache_key: format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits()) })
+        },
+        // MiMo 的接口形态是 Chat Completions 兼容（Base64 WAV），不能走 /audio/speech 适配器。
+        "mimo" => {
+            let voice = effective_tts_voice(speaker, &settings.tts_voice);
+            let engine = Box::new(crate::mimo_tts::MimoTtsClient::new(
+                key, base, model.clone(), voice.clone(),
+            ));
+            Ok(TtsEngineSetup { engine, cache_key: format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits()) })
+        },
+        "custom" => {
+            let voice = effective_tts_voice(speaker, &settings.tts_voice);
+            let engine = Box::new(crate::openai_audio::OpenAiTtsClient::new(
+                base, key, model.clone(), voice.clone(), speed,
+            ));
+            Ok(TtsEngineSetup { engine, cache_key: format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits()) })
+        },
+        other => Err(format!("不支持的语音合成服务商：{other}")),
+    }
 }
 
 #[cfg(test)]
