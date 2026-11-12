@@ -11,7 +11,7 @@
 | WorkBuddy | 独立 Hook 和会话状态 | macOS / Windows 当前可见输入框 | 追加语音草稿、确认发送及 Skill 安装；不读取私有历史数据库 |
 
 | DeepSeek Harness | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | 无需输入配对码；需在 DeepSeek 打开目标对话；输入不可用或目标不唯一时停止 |
-| Prism | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | prism-agent 使用同一桥接协议与独立 descriptor 目录（`~/.claw-pet/prism-bridge/`）；设备气泡选择会通过桥接切换其桌面对话，不抢占窗口焦点 |
+| Prism | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | prism-agent 使用同一桥接协议与独立 descriptor 目录（`~/.claw-pet/prism-bridge/`）；设备气泡选择会通过桥接切换其桌面对话，不抢占窗口焦点；语音与 DeepSeek Harness 同走系统辅助功能输入框适配器（一次性写入、确认键提交），桥接 `/inject` 保留为带回执的备用投递通道 |
 
 ## 输入与确认
 

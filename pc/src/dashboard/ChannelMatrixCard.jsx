@@ -351,7 +351,7 @@ export default function ChannelMatrixCard() {
                       >
                         <ChevronDown size={14} /> 更换形象
                       </button>
-                      {agent.id === "deepseek-harness" && (
+                      {["deepseek-harness", "prism-agent"].includes(agent.id) && (
                         <label className="channel-row__approval-timeout">
                           <span>超时时间</span>
                           <span className="channel-row__approval-timeout-control">
@@ -362,7 +362,7 @@ export default function ChannelMatrixCard() {
                               disabled={dshApprovalTimeoutSaving || syncing}
                               aria-haspopup="listbox"
                               aria-expanded={dshApprovalTimeoutOpen}
-                              aria-label="DeepSeek Harness 审批超时时间"
+                              aria-label={`${agent.label} 审批超时时间`}
                             >
                               <ChevronDown size={14} aria-hidden="true" />
                               {dshApprovalTimeoutMs === DSH_APPROVAL_NEVER_TIMEOUT_MS

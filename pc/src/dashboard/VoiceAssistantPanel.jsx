@@ -82,9 +82,9 @@ export function needsVisibleComposerGuidance(state) {
     flow.message,
     flow.composerError,
   ].filter((value) => typeof value === "string").join("\n");
-  const isVisibleDesktopAgent = ["codex", "claude-code", "workbuddy", "deepseek-harness"].includes(state?.selectedAgentId)
-    || ["codex", "claude-code", "workbuddy", "deepseek-harness"].includes(flow.agentId)
-    || /ChatGPT|Codex|Claude|WorkBuddy|DeepSeek/i.test(details);
+  const isVisibleDesktopAgent = ["codex", "claude-code", "workbuddy", "deepseek-harness", "prism-agent"].includes(state?.selectedAgentId)
+    || ["codex", "claude-code", "workbuddy", "deepseek-harness", "prism-agent"].includes(flow.agentId)
+    || /ChatGPT|Codex|Claude|WorkBuddy|DeepSeek|Prism/i.test(details);
   const isMimocode = state?.selectedAgentId === "mimocode"
     || flow.agentId === "mimocode"
     || /\bMiMoCode\b/i.test(details);
@@ -92,8 +92,8 @@ export function needsVisibleComposerGuidance(state) {
     /(macOS|Windows).*辅助功能/i.test(details)
     || /(macOS|Windows).*输入焦点无法确认/i.test(details)
     || /(macOS|Windows).*输入框已有用户草稿/i.test(details)
-    || /(ChatGPT（Codex）|Codex|Claude|WorkBuddy|DeepSeek(?: Harness)?) 前台会话未定位/i.test(details)
-    || /(ChatGPT（Codex）|Codex|Claude|WorkBuddy|DeepSeek(?: Harness)?) 前台提交失败/i.test(details)
+    || /(ChatGPT（Codex）|Codex|Claude|WorkBuddy|DeepSeek(?: Harness)?|Prism(?: Agent)?) 前台会话未定位/i.test(details)
+    || /(ChatGPT（Codex）|Codex|Claude|WorkBuddy|DeepSeek(?: Harness)?|Prism(?: Agent)?) 前台提交失败/i.test(details)
   );
 }
 
@@ -263,7 +263,7 @@ export default function VoiceAssistantPanel({
   const isMimocodeVoice = state.selectedAgentId === "mimocode"
     || state.deviceVoiceFlow?.agentId === "mimocode";
   const visibleVoiceAgentId = state.deviceVoiceFlow?.agentId || state.selectedAgentId;
-  const visibleVoiceAgentLabel = visibleVoiceAgentId === "deepseek-harness" ? "DeepSeek Harness" : visibleVoiceAgentId === "workbuddy" ? "WorkBuddy" : visibleVoiceAgentId === "claude-code"
+  const visibleVoiceAgentLabel = visibleVoiceAgentId === "deepseek-harness" ? "DeepSeek Harness" : visibleVoiceAgentId === "prism-agent" ? "Prism Agent" : visibleVoiceAgentId === "workbuddy" ? "WorkBuddy" : visibleVoiceAgentId === "claude-code"
     ? "Claude"
     : "ChatGPT（Codex）";
   const hasLiveActivity = voicePhase !== "idle"
@@ -507,7 +507,7 @@ export default function VoiceAssistantPanel({
             />
           </summary>
           <div className="voice-panel__advanced-body voice-panel__diagnostics-body">
-          {desktopPlatform === "macos" && ["codex", "claude-code", "workbuddy", "deepseek-harness"].includes(state.selectedAgentId) &&
+          {desktopPlatform === "macos" && ["codex", "claude-code", "workbuddy", "deepseek-harness", "prism-agent"].includes(state.selectedAgentId) &&
             <VoiceComposerCheck agentId={state.selectedAgentId}
               disabled={state.mockInjectPending || ["listening", "partial", "finalizing", "draft_ready"].includes(voicePhase)} />}
           <div className="voice-panel__mock voice-panel__compose">

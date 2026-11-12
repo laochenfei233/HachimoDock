@@ -26,7 +26,7 @@ test("WorkBuddy stays isolated through native USB routing and Bridge startup", (
 test("WorkBuddy voice uses its own current desktop composer and never falls back to Codex", () => {
   const source = read("../src-tauri/src/lib.rs").split("fn continue_device_voice_context_start(")[1].split("fn ")[0];
   assert.doesNotMatch(source, /暂不支持按键语音输入/);
-  assert.match(source, /matches!\(startup_context.target.agent_id.as_str\(\), "workbuddy" \| "deepseek-harness"\) \{\s*Err\(/);
+  assert.match(source, /matches!\(startup_context.target.agent_id.as_str\(\), "workbuddy" \| "deepseek-harness" \| "prism-agent"\) \{\s*Err\(/);
   const composer = read("../src-tauri/src/codex_composer.rs");
   assert.match(composer, /"workbuddy" => macos::MacosAgent::WorkBuddy/);
   assert.match(composer, /"workbuddy" => &\["workbuddy.exe"\]/);
