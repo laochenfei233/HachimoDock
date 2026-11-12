@@ -17,6 +17,25 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// 一次性转写的 PCM 上限（60 s × 16 kHz × 2 字节），约为豆包 30 s 上限的两倍。
 pub const MAX_TRANSCRIBE_PCM_BYTES: usize = 16_000 * 2 * 60;
 
+/// OpenAI 兼容端点地址（供 /audio/speech 与 /audio/transcriptions 复用同一拼接规则）。
+pub fn speech_url(base_url: &str) -> String {
+    format!("{}/audio/speech", base_url.trim().trim_end_matches('/'))
+}
+
+pub fn transcriptions_url(base_url: &str) -> String {
+    format!("{}/audio/transcriptions", base_url.trim().trim_end_matches('/'))
+}
+
+/// /audio/speech 请求体形状：model/input/speed/response_format 固定，
+/// voice 仅在非空时携带（部分兼容端点不接受空音色字段）。
+pub fn speech_payload(model: &str, input: &str, voice: &str, speed: f32) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "model": model.trim(), "input": input.trim(), "speed": speed, "response_format": "pcm",
+    });
+    if !voice.trim().is_empty() { payload["voice"] = serde_json::Value::String(voice.trim().to_string()); }
+    payload
+}
+
 // ---- TTS ---------------------------------------------------------------------------------------
 
 /// OpenAI 兼容 /audio/speech 合成客户端。单次请求、绝不自动重试（设备端已开始播放，
@@ -40,11 +59,8 @@ impl OpenAiTtsClient {
     async fn synthesize_inner(&mut self, text: &str, on_pcm: &mut (dyn FnMut(&[u8]) + Send)) -> Result<usize, String> {
         let clean = text.trim();
         if clean.is_empty() { return Ok(0); }
-        let url = format!("{}/audio/speech", self.base_url.trim().trim_end_matches('/'));
-        let mut payload = serde_json::json!({
-            "model": self.model, "input": clean, "speed": self.speed, "response_format": "pcm",
-        });
-        if !self.voice.trim().is_empty() { payload["voice"] = serde_json::Value::String(self.voice.trim().to_string()); }
+        let url = speech_url(&self.base_url);
+        let payload = speech_payload(&self.model, clean, &self.voice, self.speed);
         let client = crate::llm_network::client(REQUEST_TIMEOUT)?;
         let mut response = client.post(&url).bearer_auth(self.api_key.trim()).json(&payload).send().await
             .map_err(|e| crate::llm_network::connection_error(&e))?;
@@ -168,7 +184,7 @@ pub async fn transcribe(cfg: &OpenAiAsrConfig, pcm_16k: &[u8]) -> Result<String,
     } else {
         pcm_16k
     };
-    let url = format!("{}/audio/transcriptions", cfg.base_url.trim().trim_end_matches('/'));
+    let url = transcriptions_url(&cfg.base_url);
     let mut fields: Vec<(String, String)> = vec![
         ("model".into(), cfg.model.trim().to_string()),
         ("response_format".into(), "json".into()),
@@ -280,5 +296,19 @@ mod tests {
         let suffix = format!("\r\n--{boundary}--\r\n");
         assert!(body.ends_with(suffix.as_bytes()));
         assert!(body[..body.len() - suffix.len()].ends_with(&[7, 8]));
+    }
+
+    #[test]
+    fn openai_audio_request_urls_and_body_shape() {
+        assert_eq!(speech_url("https://api.xiaomimimo.com/v1/"), "https://api.xiaomimimo.com/v1/audio/speech");
+        assert_eq!(transcriptions_url(" https://relay.invalid/v1 "), "https://relay.invalid/v1/audio/transcriptions");
+        let with_voice = speech_payload("mimo-v2.5-tts", " 你好 ", "mimo_default", 1.05);
+        assert_eq!(with_voice["model"], "mimo-v2.5-tts");
+        assert_eq!(with_voice["input"], "你好");
+        assert_eq!(with_voice["voice"], "mimo_default");
+        assert!((with_voice["speed"].as_f64().unwrap() - 1.05).abs() < 1e-6);
+        assert_eq!(with_voice["response_format"], "pcm");
+        let without_voice = speech_payload("m", "hi", "  ", 1.0);
+        assert!(without_voice.get("voice").is_none());
     }
 }

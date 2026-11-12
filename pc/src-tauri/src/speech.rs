@@ -15,7 +15,7 @@ pub use crate::volcengine_asr::StreamingSpeechEvent;
 pub type PcmSink<'a> = &'a mut (dyn FnMut(&[u8]) + Send);
 
 /// 一个可合成的语音会话。PCM 一律 16 kHz 单声道 S16LE——各适配器负责把自己服务商的
- /// 线上格式转码成该格式。
+/// 线上格式转码成该格式。
 pub trait TtsEngine: Send {
     fn synthesize<'a>(&'a mut self, text: &'a str, on_pcm: PcmSink<'a>)
         -> Pin<Box<dyn Future<Output = Result<usize, String>> + Send + 'a>>;

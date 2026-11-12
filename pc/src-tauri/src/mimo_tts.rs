@@ -141,7 +141,10 @@ pub fn wav_bytes_to_pcm16k(wav: &[u8], on_pcm: &mut (dyn FnMut(&[u8]) + Send)) -
                 f32::from(i16::from_le_bytes(chunk[at..at + 2].try_into().unwrap()))
             };
         }
-        let bytes = ((sum / channels as f32).clamp(-32768.0, 32767.0) as i16).to_le_bytes();
+        let mono = sum / channels as f32;
+        // IEEE-float WAV 样本在 [-1,1]；整型路径已是 i16 量纲，仅浮点需要缩放。
+        let scaled = if is_float { mono * 32_767.0 } else { mono };
+        let bytes = (scaled.clamp(-32768.0, 32767.0) as i16).to_le_bytes();
         crate::openai_audio::resample_mono_16k(&bytes, &mut state, &mut |pcm| pending.extend_from_slice(pcm));
         if pending.len() >= 8192 { flush(&mut pending); }
     }
@@ -208,5 +211,33 @@ mod tests {
         assert!(ok["choices"][0]["message"]["audio"]["data"].as_str().is_some());
         let err = serde_json::json!({"error": {"message": "bad voice"}});
         assert_eq!(err["error"]["message"].as_str(), Some("bad voice"));
+    }
+
+    fn wav_float_bytes(sample_rate: u32, samples: &[f32]) -> Vec<u8> {
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&((36 + samples.len() * 4) as u32).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&(sample_rate * 4).to_le_bytes());
+        wav.extend_from_slice(&4u16.to_le_bytes());
+        wav.extend_from_slice(&32u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&((samples.len() * 4) as u32).to_le_bytes());
+        for sample in samples { wav.extend_from_slice(&sample.to_le_bytes()); }
+        wav
+    }
+
+    #[test]
+    fn float_wav_is_scaled_to_i16_amplitude_not_near_silence() {
+        // IEEE-float WAV（[-1,1]）必须缩放到 i16 量纲；0.5 → 约 16383。
+        let mut out = Vec::new();
+        wav_bytes_to_pcm16k(&wav_float_bytes(16_000, &[0.5, -0.25]), &mut |pcm| out.extend_from_slice(pcm)).unwrap();
+        assert_eq!(out.len(), 4);
+        assert_eq!(i16::from_le_bytes([out[0], out[1]]), 16_383);
+        assert_eq!(i16::from_le_bytes([out[2], out[3]]), -8_191); // 截断取整
     }
 }

@@ -139,6 +139,10 @@ export default function PersonaVoiceModal({ appearance, required = false, onClos
     ? form.voice.provider.replace(/_tts$/, "")
     : (globalTtsProvider || "");
   const resolvedTtsLabel = resolvedProviderLabel(resolvedTtsProviderId);
+  // 试听 gating：跟随全局（或与全局一致）时按全局凭据就绪；显式换到其他服务商时放行——
+  // 缺 Key 由后端在合成时给出该服务商的明确错误提示。
+  const overridesGlobalProvider = Boolean(form.voice.provider) && globalTtsProvider !== null && resolvedTtsProviderId !== globalTtsProvider;
+  const previewAvailable = overridesGlobalProvider || previewReady;
   const voiceSectionSubtitle = form.voice.provider
     ? (resolvedTtsLabel || "自定义语音合成")
     : (resolvedTtsLabel ? `跟随全局 · ${resolvedTtsLabel}` : "跟随全局");

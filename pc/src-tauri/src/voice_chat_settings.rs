@@ -144,7 +144,10 @@ pub fn normalize_speech_provider(value: &str) -> String {
 pub fn normalize_voice_provider(value: &str) -> Option<String> {
     let id = value.trim().to_ascii_lowercase();
     let id = id.strip_suffix("_tts").unwrap_or(&id);
-    (!id.is_empty()).then(|| normalize_speech_provider(id))
+    if id.is_empty() { return None; }
+    // doubao_tts 是 schema v2 的历史别名，映射到 volcengine；未知标识一律跟随全局。
+    let id = if id == "doubao" { "volcengine" } else { id };
+    (id == "custom" || speech_preset(id).is_some()).then(|| id.to_string())
 }
 
 fn speech_scope(provider: &str, base_url: &str) -> String {
@@ -713,7 +716,9 @@ pub fn tts_config(speaker: &str, clone_speaker_id: &str, speed: f32) -> Result<D
 /// 豆包风格的音色 id 对其他服务商无效：回退到该服务商默认音色（组件语音/新闻读书场景）。
 fn effective_tts_voice(speaker: &str, default_voice: &str) -> String {
     let speaker = speaker.trim();
-    if speaker.is_empty() || speaker.contains("bigtts") || speaker.contains("icl") {
+    // 豆包目录 id 大小写混杂（zh_*_bigtts / ICL_uranus_*），统一按小写识别再回退。
+    let lower = speaker.to_ascii_lowercase();
+    if speaker.is_empty() || lower.contains("bigtts") || lower.contains("icl") {
         default_voice.trim().to_string()
     } else {
         speaker.to_string()
@@ -731,6 +736,11 @@ pub struct TtsEngineSetup {
 pub(crate) fn doubao_voice_key(cfg: &DoubaoTtsConfig) -> String {
     // Credential rotation must not invalidate identical public voice audio.
     format!("news-pcm16-v1|{}|{}|{}|{}|{}", cfg.ws_url, cfg.resource_id, cfg.model, cfg.speaker, cfg.speed.to_bits())
+}
+
+/// 非豆包服务商的资讯缓存键（provider+model+voice+speed，不含凭据）。
+fn news_pcm16_v2_key(provider: &str, model: &str, voice: &str, speed: f32) -> String {
+    format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits())
 }
 
 /// 多服务商 TTS 引擎工厂：解析形象级 provider 覆盖（否则全局）、凭据、模型与音色。
@@ -771,7 +781,7 @@ pub fn tts_engine_with_cache_key(voice_provider: Option<&str>, speaker: &str, cl
             let engine = Box::new(crate::dashscope_tts::DashscopeTtsClient::new(
                 key, base, model.clone(), voice.clone(),
             ));
-            Ok(TtsEngineSetup { engine, cache_key: format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits()) })
+            Ok(TtsEngineSetup { engine, cache_key: news_pcm16_v2_key(&provider, &model, &voice, speed) })
         },
         // MiMo 的接口形态是 Chat Completions 兼容（Base64 WAV），不能走 /audio/speech 适配器。
         "mimo" => {
@@ -779,14 +789,14 @@ pub fn tts_engine_with_cache_key(voice_provider: Option<&str>, speaker: &str, cl
             let engine = Box::new(crate::mimo_tts::MimoTtsClient::new(
                 key, base, model.clone(), voice.clone(),
             ));
-            Ok(TtsEngineSetup { engine, cache_key: format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits()) })
+            Ok(TtsEngineSetup { engine, cache_key: news_pcm16_v2_key(&provider, &model, &voice, speed) })
         },
         "custom" => {
             let voice = effective_tts_voice(speaker, &settings.tts_voice);
             let engine = Box::new(crate::openai_audio::OpenAiTtsClient::new(
                 base, key, model.clone(), voice.clone(), speed,
             ));
-            Ok(TtsEngineSetup { engine, cache_key: format!("news-pcm16-v2|{provider}|{model}|{voice}|{}", speed.to_bits()) })
+            Ok(TtsEngineSetup { engine, cache_key: news_pcm16_v2_key(&provider, &model, &voice, speed) })
         },
         other => Err(format!("不支持的语音合成服务商：{other}")),
     }
@@ -1092,5 +1102,63 @@ mod tests {
         let masked = mask_secret(&stored.llm_api_key);
         stored = merge_settings(stored, VoiceChatSettingsInput {llm_api_key:Some(masked),..Default::default()});
         assert_eq!(stored.llm_api_key, "sk-realkey123456");
+    }
+
+    #[test]
+    fn speech_provider_switches_isolate_keys_and_never_borrow_across_scopes() {
+        let mut stored = VoiceChatSettings { asr_provider: "dashscope".into(), ..Default::default() };
+        stored.speech_api_keys.insert("dashscope".into(), "ds-key".into());
+        stored.speech_api_keys.insert("custom:https://relay.invalid/v1".into(), "custom-key".into());
+        // 空草稿切换服务商：只落到目标 scope，其他家的 Key 原样保留、互不借用。
+        let switched = merge_settings(stored.clone(), VoiceChatSettingsInput {
+            asr_provider: Some("custom".into()),
+            asr_base_url: Some("https://relay.invalid/v1/".into()),
+            ..Default::default()
+        });
+        assert_eq!(switched.asr_provider, "custom");
+        // merge 只去空白；scope 计算时再去尾部斜杠——两种写法解析到同一个 scope。
+        assert_eq!(switched.asr_base_url, "https://relay.invalid/v1/");
+        assert_eq!(speech_key(&switched, "custom", "https://relay.invalid/v1").as_deref(), Some("custom-key"));
+        assert_eq!(speech_key(&switched, "custom", "https://relay.invalid/v1/").as_deref(), Some("custom-key"));
+        assert_eq!(speech_key(&switched, "dashscope", "").as_deref(), Some("ds-key"));
+        // 新 Key 只写目标 scope：切到 volcengine 的 asr_api_key 走凭据库，不入 map。
+        let mut next = stored.clone();
+        next.asr_provider = "mimo".into();
+        let wrote = merge_settings(next, VoiceChatSettingsInput {
+            asr_api_key: Some("mimo-key".into()),
+            asr_provider: Some("volcengine".into()),
+            ..Default::default()
+        });
+        assert_eq!(wrote.asr_provider, "volcengine");
+        assert!(wrote.speech_api_keys.values().all(|key| key != "mimo-key"));
+        assert_eq!(wrote.speech_api_keys.get("dashscope").map(String::as_str), Some("ds-key"));
+    }
+
+    #[test]
+    fn voice_provider_aliases_resolve_and_unknown_follows_global() {
+        assert_eq!(normalize_voice_provider(""), None);
+        assert_eq!(normalize_voice_provider("doubao_tts").as_deref(), Some("volcengine"));
+        assert_eq!(normalize_voice_provider("Dashscope_TTS ").as_deref(), Some("dashscope"));
+        assert_eq!(normalize_voice_provider("mimo_tts").as_deref(), Some("mimo"));
+        assert_eq!(normalize_voice_provider("custom_tts").as_deref(), Some("custom"));
+        assert_eq!(normalize_voice_provider("bogus_tts"), None);
+    }
+
+    #[test]
+    fn doubao_speaker_ids_fall_back_regardless_of_catalog_casing() {
+        // 目录中 201 个 id 为 ICL_uranus_*（大写），必须与 zh_*_bigtts 一样触发回退。
+        assert_eq!(effective_tts_voice("ICL_uranus_v2.0_240711", "longxiaochun_v3"), "longxiaochun_v3");
+        assert_eq!(effective_tts_voice("zh_female_peiqi_uranus_bigtts", "longxiaochun_v3"), "longxiaochun_v3");
+        assert_eq!(effective_tts_voice("", "longxiaochun_v3"), "longxiaochun_v3");
+        assert_eq!(effective_tts_voice("longxiaochun_v3", "longshu_v3"), "longxiaochun_v3");
+    }
+
+    #[test]
+    fn non_doubao_cache_keys_carry_provider_model_voice_and_speed() {
+        let key = news_pcm16_v2_key("dashscope", "cosyvoice-v3-flash", "longxiaochun_v3", 1.25f32);
+        assert!(key.starts_with("news-pcm16-v2|dashscope|cosyvoice-v3-flash|longxiaochun_v3|"));
+        let other = news_pcm16_v2_key("dashscope", "cosyvoice-v3-flash", "longxiaochun_v3", 1.5f32);
+        assert_ne!(key, other);
+        assert_ne!(key, news_pcm16_v2_key("mimo", "cosyvoice-v3-flash", "longxiaochun_v3", 1.25f32));
     }
 }

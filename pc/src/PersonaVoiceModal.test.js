@@ -47,6 +47,12 @@ test("voice section gains a 合成服务商 select with provider-aware voice pic
   assert.match(source, /isDoubaoVoice \?[\s\S]*?复刻音色 ID/, "clone input stays in the Doubao branch only");
 });
 
+test("preview gate follows the persona-level provider override", () => {
+  assert.match(source, /overridesGlobalProvider/, "override gate variable present");
+  assert.match(source, /previewAvailable = overridesGlobalProvider \|\| previewReady/,
+    "an explicit different provider is allowed to attempt preview with a backend error");
+});
+
 test("v1 persona-voice documents migrate the forced doubao provider to follow-global", () => {
   const record = normalizePersonaVoice(
     {

@@ -2844,6 +2844,35 @@ mod tests {
     }
 
     #[test]
+    fn persona_provider_swap_rebuilds_the_engine_and_voicespec_defaults_follow_global() {
+        // serde 兼容：旧前端的 start payload 没有 provider 字段时按跟随全局处理。
+        let spec: VoiceSpec = serde_json::from_value(json!({"speaker":"zh_female_peiqi_uranus_bigtts","speed":1.05,"volume":1.0})).unwrap();
+        assert_eq!(spec.provider, "");
+        let explicit: VoiceSpec = serde_json::from_value(json!({"speaker":"s","provider":"mimo_tts","speed":1.0,"volume":1.0})).unwrap();
+        assert_eq!(explicit.provider, "mimo_tts");
+
+        tauri::async_runtime::block_on(async {
+            let (tx, mut rx) = mpsc::channel(128);
+            let session = Session { id:"rtc-test".into(), board_device_id:"board".into(), transport:None, capture_stream:Mutex::new(None), audio_egress:Mutex::new(()), audio_requests:Arc::new(Mutex::new(Default::default())), cancelled:AtomicBool::new(false), duplex:AtomicBool::new(false),
+                capture_armed:AtomicBool::new(false), capture_ready:AtomicBool::new(false),
+                stop_notify:tokio::sync::Notify::new(), input:tx,
+                status:Mutex::new(RealtimeChatStatus { active:true, appearance_id:"pet-a".into(), ..Default::default() }),
+                completed_playback:Mutex::new(String::new()), pending_persona:Mutex::new(None), playback_volume:AtomicU32::new(1.0f32.to_bits()) };
+            let mut current = RealtimeChatStartInput { board_device_id:"board".into(), appearance_id:"pet-a".into(),
+                display_name:"n".into(), system_prompt:"p".into(), greeting:"".into(), voice:VoiceSpec::default() };
+            let mut next = current.clone(); next.voice.provider = "dashscope_tts".into();
+            queue_persona_update(&session, next).unwrap();
+            // 只有 provider 变化也必须重建引擎，不能沿用上一个服务商的连接。
+            let mut tts: Box<dyn TtsEngine> = Box::new(DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", "s", "", 1.0, "")));
+            assert!(apply_pending_persona_with(&session, &mut current, &mut tts, |voice| {
+                assert_eq!(voice.provider, "dashscope_tts");
+                Ok(Box::new(DoubaoTtsClient::new(crate::doubao_tts::DoubaoTtsConfig::new("test", &voice.speaker, "", voice.speed(), ""))))
+            }).await.unwrap());
+            assert_eq!(current.voice.provider, "dashscope_tts");
+        });
+    }
+
+    #[test]
     fn closed_stream_requires_terminal_but_empty_final_preserves_displayed_partial() {
         tauri::async_runtime::block_on(async {
             let (tx, mut rx) = mpsc::unbounded_channel();
