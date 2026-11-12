@@ -10,7 +10,7 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 
 ## Report
 
-**What was built** — desk-companion-clock：host:true 的 composition v2 应用工具。纯黑背景（surface.background=0）上，左侧时钟簇居中显示 PC 本地时区的 HH:MM（分钟补零，96px/weight600 白色）、上方中文日期（YYYY年M月D日，灰）、下方天气与气温（Open-Meteo 宁波坐标，WMO 码映射中文天气文案 + 温度℃，灰）；右侧 200×200 哈基米风金毛 PNG 桌宠。SW1 手动刷新天气（host.refresh→wx:refresh）。天气缺失/失败时天气行显示"等待数据"，时间日期不受影响。
+**What was built** — desk-companion-clock：host:true 的 composition v2 应用工具。纯黑背景（surface.background=0）上，左侧时钟簇居中显示 PC 本地时区的 HH:MM（分钟补零，96px/weight600 白色）、上方中文日期（YYYY年M月D日，灰）、下方天气与气温（Open-Meteo 宁波坐标，WMO 码映射中文天气文案 + 温度℃，灰）；右侧 200×200 桌宠 PNG（设备当前形象 builtin-terrier 西高地白梗的静态帧，扒桌沿姿势）。SW1 手动刷新天气（host.refresh→wx:refresh）。天气缺失/失败时天气行显示"等待数据"，时间日期不受影响。
 
 **Verification** — validate_generated_widget.py → OK exit 0（独立审查者复跑确认）；app_services.application_errors → []（composition v2 全量校验）；smoke_test_widget_game.py → CONTRACT_OK exit 0；PC 同源 app_expr 表达式模拟 4 案例（9:05/14:00 补零、2026年11月12日、多云 13.4℃、雨 22.0℃、缺失→等待数据）全部符合设计；独立 subagent 审查 Spec 合规/正确性/一致性三维 PASS，唯一 minor（RGB565 灰色算错为紫红）已修复（44373=0xAD55→RGB 173,170,173）并复验通过。真机 USB 验收未做（组件包未经设备实机显示/联网验收）。
 
@@ -64,9 +64,12 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 
 ### S2.4 素材
 
-- `assets/pet.png`：哈基米风金毛小狗，静态单帧（host 组件无 tick，无动画），透明背景，
-  目标约 200×200（P4I1 单图 ≤240 边长、总像素 ≤98304 预算内），PIL 4x 超采样绘制后缩小。
-- 绘制脚本留在组件目录之外（`generated/_scratch/`），包内只保留最终 PNG。
+- `assets/pet.png`：设备当前形象 **builtin-terrier（西高地白梗）**——用户确认不做系统级
+  动态形象读取，直接把当前形象导成静态帧。从 `HachimiDock/terrier-clips/idle.begging.mp4`
+  第 60% 帧提取：420×420 裁切（狗+桌沿+动感线）→ 压黑位 BLACK_POINT=30（素材近黑底与
+  纯黑画布无缝融合，四角全黑）→ 200×200（P4I1 预算内，v1.0.0 哈希 8b9d7e5095b53646）。
+- 提取脚本留在组件目录之外（`generated/_scratch/extract_pet_from_clip.py`），包内只保留最终 PNG。
+  （v1 首版曾用手绘哈基米风金毛占位，hash 05e02cc0e0eb9afc，被本版替代。）
 
 ### S2.5 展示降级与诚实边界
 
