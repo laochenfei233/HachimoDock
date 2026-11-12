@@ -9,6 +9,7 @@ if (isMainThread || !parentPort) {
 const definitions = {
   codex: "./codex-log-monitor",
   claude: "./claude-log-monitor",
+  zcode: "./zcode-log-monitor",
 };
 const kind = String(workerData?.kind || "");
 const modulePath = definitions[kind];

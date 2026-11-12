@@ -18,6 +18,7 @@ const TOOL_START_EVENTS = new Set([
   "response_item:custom_tool_call",
   "response_item:web_search_call",
   "session.tool",
+  "tool.call.started",
 ]);
 const TOOL_ERROR_EVENTS = new Set([
   "PostToolUseFailure",
@@ -68,6 +69,7 @@ function isNewTurnStartSignal(payload) {
     "userpromptsubmit",
     "user_message",
     "task_started",
+    "turn.started",
     "session.start",
     "session.pre",
     "agent.lifecycle.start",
@@ -162,7 +164,7 @@ class SessionMetricsTracker {
     // Legacy/polling events carry no generation receipt. Never reuse metadata
     // from an earlier hook just because they share a session record.
     if (source === "workbuddy" && !payload.taskCorrelation) delete record.taskCorrelation;
-    if ((source === "codex" || source === "workbuddy") && payload.taskCorrelation) {
+    if ((source === "codex" || source === "workbuddy" || source === "zcode") && payload.taskCorrelation) {
       const { userHash, turnId, turnActive } = payload.taskCorrelation;
       record.taskCorrelation = {
         userHash: typeof userHash === "string" && /^[a-f0-9]{64}$/.test(userHash) ? userHash : "",
