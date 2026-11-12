@@ -40,7 +40,7 @@ fn descriptor_file(bridge: Bridge) -> Result<PathBuf, String> {
             std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
                 .map(|h| PathBuf::from(h).join(relative))
         })
-        .ok_or("DSH capability unavailable")
+        .ok_or_else(|| "DSH capability unavailable".to_string())
 }
 
 pub(crate) fn load(role: &str) -> Result<Capability, String> {

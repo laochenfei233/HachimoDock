@@ -1526,7 +1526,7 @@ fn activate_prism_session(session_id: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn prism_activate_session(session_id: String) -> Result<(), String> {
+async fn prism_activate_session(session_id: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || activate_prism_session(&session_id))
         .await
         .map_err(|_| "Prism 会话切换未完成".to_string())?
