@@ -22,6 +22,7 @@
 #include "pet_p4_input.h"
 #include "pet_p4_audio.h"
 #include "pet_p4_conversation.h"
+#include "pet_p4_display_aod.h"
 
 #include <stdio.h>
 #include <stdatomic.h>
@@ -1583,6 +1584,8 @@ void pet_p4_input_process(
   pet_p4_input_event_t event;
   if (!g_event_queue) return;
   while (xQueueReceive(g_event_queue, &event, 0) == pdTRUE) {
+    /* 息屏灵动岛激活时,任意实体输入只唤醒屏幕;事件不再进入绑定分发。 */
+    if (pet_p4_display_aod_consume_input(state)) continue;
     /* Preserve cancellation across several queued navigation events in one
      * loop, including leave-and-return before the worker finishes loading. */
     pet_p4_miniapp_activation_guard(state && !strcmp(state->screen_page, "components")

@@ -1,5 +1,6 @@
 #include "pet_p4_touch.h"
 #include "pet_p4_conversation.h"
+#include "pet_p4_display_aod.h"
 
 #include <stdatomic.h>
 #include <stdio.h>
@@ -508,6 +509,8 @@ void pet_p4_touch_process(
   touch_sample_t sample;
   if (!g_touch_queue) return;
   while (xQueueReceive(g_touch_queue, &sample, 0) == pdTRUE) {
+    /* 息屏灵动岛激活时,触摸只唤醒屏幕;样本不再进入页面手势处理。 */
+    if (pet_p4_display_aod_consume_input(state)) continue;
     bool test = state && !pet_p4_conversation_active(state) && !strcmp(state->screen_page, "touch_test");
     bool component = state && !pet_p4_conversation_active(state) && !strcmp(state->screen_page,"app")
       && pet_p4_miniapp_slicing_active();

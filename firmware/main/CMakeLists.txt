@@ -19,6 +19,7 @@ idf_component_register(
     "pet_p4_cue_packed.c"
     "pet_p4_audio_frontend.c"
     "pet_p4_behavior.c"
+    "pet_p4_display_aod.c"
     "pet_p4_conversation.c"
     "pet_p4_diagnostics.c"
     "pet_p4_reset_record.c"

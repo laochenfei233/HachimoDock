@@ -51,6 +51,7 @@
 #include "pet_p4_audio_frontend.h"
 #include "pet_p4_diagnostics.h"
 #include "pet_p4_input.h"
+#include "pet_p4_display_aod.h"
 #include "pet_p4_miniapp.h"
 #include "pet_p4_media.h"
 #include "pet_p4_ota.h"
@@ -2007,6 +2008,7 @@ void app_main(void) {
     ESP_LOGW(TAG, "P4 microphone unavailable, keeping non-voice controls alive: %s",
              esp_err_to_name(audio_err));
   }
+  pet_p4_display_aod_boot_load();
   esp_err_t render_err = ESP_ERR_INVALID_STATE;
 #if PET_P4_HELLO_ASYNC
   /* A diagnostic bus sweep must finish before revealing the first image, not
@@ -2157,6 +2159,7 @@ void app_main(void) {
     pet_p4_state_process(&g_state, now_ms);
     pet_p4_touch_process(&g_state, transport_send_line, NULL);
     pet_p4_input_process(&g_state, transport_send_line, NULL);
+    pet_p4_display_aod_process(&g_state, now_ms);
     pet_p4_miniapp_activation_guard(!strcmp(g_state.screen_page, "components")
       && !pet_p4_conversation_active(&g_state) && !g_state.asset_transfer_active
       && !pet_p4_ota_transfer_active());

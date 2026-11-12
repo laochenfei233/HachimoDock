@@ -33,7 +33,7 @@ static pet_p4_view_status_t status_from_state(const pet_p4_runtime_state_t *stat
 /* The small main-page pet badge describes lifecycle only. Agent/session
  * identity remains available to routing and full Session cards, never as a
  * fallback label when a state event has no speech body. */
-static const char *compact_pet_status_label(pet_p4_view_status_t status) {
+const char *pet_p4_view_status_label(pet_p4_view_status_t status) {
   switch (status) {
     case PET_P4_VIEW_STATUS_WORKING: return "工作中";
     case PET_P4_VIEW_STATUS_WAITING: return "等待操作";
@@ -150,7 +150,7 @@ void pet_p4_build_view_model(const pet_p4_runtime_state_t *state, pet_p4_view_mo
     /* Missing content is lifecycle metadata, never an Agent/session-name
      * caption. Keep all nonempty task/speech content verbatim. */
     out->title = "";
-    out->body = compact_pet_status_label(out->status);
+    out->body = pet_p4_view_status_label(out->status);
     out->compact_bubble = true;
   }
 }

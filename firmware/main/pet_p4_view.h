@@ -37,6 +37,8 @@ typedef struct {
 } pet_p4_view_model_t;
 
 void pet_p4_build_view_model(const pet_p4_runtime_state_t *state, pet_p4_view_model_t *out);
+/* 生命周期短标签(休息中/工作中/…);AOD 灵动岛与主页徽标共用一份文案。 */
+const char *pet_p4_view_status_label(pet_p4_view_status_t status);
 
 #ifdef __cplusplus
 }

@@ -684,6 +684,12 @@ static int64_t local_wall_seconds(uint64_t ms){
   int64_t value=g_wall_valid?g_wall_seconds+(int64_t)((ms>=g_wall_at?ms-g_wall_at:0)/1000):-1;
   portEXIT_CRITICAL(&g_clock_lock);return value;
 }
+bool pet_p4_miniapp_wall_seconds(uint64_t ms,int64_t *out_seconds){
+  if(!out_seconds)return false;
+  int64_t value=local_wall_seconds(ms);
+  if(value<0)return false;
+  *out_seconds=value;return true;
+}
 bool pet_p4_miniapp_clock_sync(const cJSON *payload,uint64_t ms){
   const cJSON *time=cJSON_GetObjectItemCaseSensitive(payload,"unixSeconds"),*offset=cJSON_GetObjectItemCaseSensitive(payload,"utcOffsetMinutes");
   if(!cJSON_IsNumber(time)||time->valuedouble<1577836800.0||time->valuedouble>4102444799.0||floor(time->valuedouble)!=time->valuedouble||!cJSON_IsNumber(offset)||offset->valuedouble!=offset->valueint||offset->valueint< -840||offset->valueint>840)return false;

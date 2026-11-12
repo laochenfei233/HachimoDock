@@ -23,6 +23,7 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/ledc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "bsp/esp32_p4_wifi6_touch_lcd_4_3.h"
@@ -150,6 +151,26 @@ esp_err_t pet_p4_lcd_keep_awake(void) {
   if (!g_panel_handle) return ESP_ERR_INVALID_STATE;
   if (!g_backlight_revealed) return ESP_ERR_INVALID_STATE;
   return g_backlight_status;
+}
+
+#define LCD_BRIGHTNESS_LEDC_CH CONFIG_BSP_DISPLAY_BRIGHTNESS_LEDC_CH
+
+esp_err_t pet_p4_lcd_set_brightness(unsigned percent) {
+  if (!g_backlight_revealed) return ESP_ERR_INVALID_STATE;
+  if (percent > 100u) percent = 100u;
+  /* 与 BSP 亮度初始化同参(timer 1 / 10-bit / 5 kHz);一次调用同时完成
+   * 引脚重挂载与占空设置——普通 GPIO 模式下 LEDC 占空更新不可见。 */
+  ledc_channel_config_t channel = {
+    .gpio_num = BSP_LCD_BACKLIGHT,
+    .speed_mode = LEDC_LOW_SPEED_MODE,
+    .channel = LCD_BRIGHTNESS_LEDC_CH,
+    .intr_type = LEDC_INTR_DISABLE,
+    .timer_sel = 1,
+    .duty = (uint32_t) percent * 1023u / 100u,
+    .hpoint = 0,
+    .flags = {.output_invert = 0},
+  };
+  return ledc_channel_config(&channel);
 }
 
 esp_err_t pet_p4_lcd_show_color_bar(void) {

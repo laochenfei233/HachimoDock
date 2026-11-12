@@ -62,6 +62,7 @@
 #include "pet_p4_rgb565_rotate.h"
 #include "pet_p4_h264_pack_word.h"
 #include "pet_p4_miniapp.h"
+#include "pet_p4_display_aod.h"
 #if PET_SERVICE_BRIDGE_ENABLED
 #include "pet_p4_app_host.h"
 #endif
@@ -7221,6 +7222,96 @@ static void draw_approval_overlay(
                        rgb565(255, 150, 140));
 }
 
+/* 息屏灵动岛:纯黑底 + 顶部居中胶囊;至多两项横排,分钟变化由主循环周期
+ * 渲染带出。两项皆为 none 时不画胶囊,仅黑屏调暗(纯息屏)。 */
+static void draw_aod_degree_ring(int cx, int cy, uint16_t color) {
+  fill_ellipse(cx, cy, 3, 3, color);
+  fill_ellipse(cx, cy, 1, 1, rgb565(0, 0, 0));
+}
+
+static void render_aod_page(const pet_p4_view_model_t *view, unsigned long long now_ms) {
+  const uint16_t pill_fill = rgb565(16, 16, 18);
+  const uint16_t pill_outline = rgb565(56, 56, 60);
+  const uint16_t ink_primary = rgb565(222, 222, 226);
+  const uint16_t ink_secondary = rgb565(148, 148, 154);
+  fill_rect(0, 0, PET_P4_UI_WIDTH, PET_P4_UI_HEIGHT, rgb565(0, 0, 0));
+
+  struct {
+    const char *text;
+    int scale;
+    uint16_t color;
+    bool degree;
+    bool marker;
+    pet_p4_view_status_t status;
+  } slots[2] = {{0}};
+  char slot_text[2][32];
+  static const char *const aod_weekday[] = {"一", "二", "三", "四", "五", "六", "日"};
+  unsigned slot_count = 0;
+  pet_p4_aod_time_t tick;
+  bool time_ready = pet_p4_display_aod_local_time(now_ms, &tick);
+  unsigned item_count = pet_p4_display_aod_item_count();
+  for (unsigned k = 0; k < item_count && slot_count < 2; k++) {
+    pet_p4_aod_item_t item = pet_p4_display_aod_item(k);
+    char *text = slot_text[slot_count];
+    text[0] = ' ';
+    if (item == PET_P4_AOD_ITEM_TIME && time_ready) {
+      snprintf(text, sizeof(slot_text[0]), "%02d:%02d", tick.hour, tick.minute);
+    } else if (item == PET_P4_AOD_ITEM_DATE && time_ready) {
+      snprintf(text, sizeof(slot_text[0]), "%d月%d日 周%s", tick.month, tick.day,
+        aod_weekday[tick.weekday]);
+    } else if (item == PET_P4_AOD_ITEM_WEATHER) {
+      double temp;
+      const char *cond;
+      if (pet_p4_display_aod_weather(&temp, &cond)) {
+        int rounded = (int) (temp < 0 ? temp - 0.5 : temp + 0.5);
+        snprintf(text, sizeof(slot_text[0]), "%s %d", cond, rounded);
+      }
+    } else if (item == PET_P4_AOD_ITEM_AGENT && view) {
+      snprintf(text, sizeof(slot_text[0]), "%s", pet_p4_view_status_label(view->status));
+      slots[slot_count].marker = true;
+      slots[slot_count].status = view->status;
+    }
+    if (!text[0]) continue;
+    slots[slot_count].text = text;
+    slots[slot_count].scale = item == PET_P4_AOD_ITEM_TIME ? 2 : 1;
+    slots[slot_count].color = item == PET_P4_AOD_ITEM_TIME ? ink_primary : ink_secondary;
+    slots[slot_count].degree = item == PET_P4_AOD_ITEM_WEATHER;
+    slot_count++;
+  }
+  if (!slot_count) return;
+
+  const int pill_h = 56;
+  const int pill_y = 36;
+  const int padding = 26;
+  const int gap = 22;
+  int content_w = 0;
+  for (unsigned k = 0; k < slot_count; k++) {
+    content_w += utf8_text_width(slots[k].text, -1, slots[k].scale);
+    if (slots[k].degree) content_w += 10; /* 4px 间隔 + 6px 环径 */
+    if (slots[k].marker) content_w += 34; /* 30px 徽章 + 4px 间隙 */
+  }
+  content_w += gap * (int) (slot_count - 1);
+  const int pill_w = content_w + padding * 2;
+  const int pill_x = (PET_P4_UI_WIDTH - pill_w) / 2;
+  const int pill_cy = pill_y + pill_h / 2;
+  fill_round_rect_outline(pill_x, pill_y, pill_w, pill_h, pill_h / 2, pill_fill, pill_outline);
+  int pen_x = pill_x + padding;
+  for (unsigned k = 0; k < slot_count; k++) {
+    if (slots[k].marker) {
+      draw_status_marker(slots[k].status, now_ms, pen_x + 15, pill_cy);
+      pen_x += 34;
+    }
+    draw_text_line_vcenter(slots[k].text, pen_x, pill_y, pill_h,
+      pill_x + pill_w - pen_x, slots[k].color, slots[k].scale, false);
+    pen_x += utf8_text_width(slots[k].text, -1, slots[k].scale);
+    if (slots[k].degree) {
+      draw_aod_degree_ring(pen_x + 4, pill_cy - slots[k].scale * 6, slots[k].color);
+      pen_x += 10;
+    }
+    if (k + 1 < slot_count) pen_x += gap;
+  }
+}
+
 esp_err_t pet_p4_renderer_render(
   const pet_p4_runtime_state_t *state,
   const pet_p4_view_model_t *view,
@@ -7318,7 +7409,9 @@ esp_err_t pet_p4_renderer_render(
     pet_compact_underlay_forget(&g_main_compact_underlay);
     g_last_approval_visible = approval_visible;
   }
-  if (strcmp(page, "components") == 0) {
+  if (strcmp(page, "aod") == 0) {
+    render_aod_page(view, now_ms);
+  } else if (strcmp(page, "components") == 0) {
     render_component_center_page(view && view->component_loading);
   } else if (strcmp(page, "touch_test") == 0 && state) {
     render_touch_test_page(state);

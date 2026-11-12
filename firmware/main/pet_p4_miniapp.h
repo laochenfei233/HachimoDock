@@ -313,6 +313,8 @@ bool pet_p4_miniapp_install_begin(const cJSON *payload, char *error, size_t erro
 bool pet_p4_miniapp_install_unchanged(void);
 #endif
 bool pet_p4_miniapp_clock_sync(const cJSON *payload, uint64_t now_ms);
+/* 心跳 clock 锚定的本地墙钟秒(unix+时区偏移);未同步返回 false。 */
+bool pet_p4_miniapp_wall_seconds(uint64_t now_ms, int64_t *out_seconds);
 bool pet_p4_miniapp_install_chunk(const cJSON *payload, char *error, size_t error_size);
 bool pet_p4_miniapp_install_commit(const cJSON *payload, char *error, size_t error_size);
 bool pet_p4_miniapp_remove(const char *widget_id, char *error, size_t error_size);

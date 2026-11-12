@@ -19,6 +19,7 @@
 #include "pet_p4_usb_native.h"
 #include "pet_p4_variable_owners.h"
 #include "pet_p4_conversation.h"
+#include "pet_p4_display_aod.h"
 #include "pet_p4_audio.h"
 #include "pet_p4_audio_patch.h"
 #include "pet_p4_system_cues.h"
@@ -536,6 +537,7 @@ static bool topic_is_known_but_unsupported(const char *topic) {
     || strncmp(topic, "input/", 6) == 0
     || strncmp(topic, "voice/", 6) == 0
     || strncmp(topic, "audio/", 6) == 0
+    || strncmp(topic, "display/", 8) == 0
     || strncmp(topic, "widget/", 7) == 0
     || strncmp(topic, "firmware/", 9) == 0;
 }
@@ -3284,6 +3286,7 @@ void pet_p4_send_hello_for_board(const char *board_id, pet_p4_send_line_fn send_
   cJSON_AddBoolToObject(capabilities, "audio", audio_ready || audio_playback_ready);
   if (audio_playback_ready && pet_audio_volume_ready())
     cJSON_AddStringToObject(capabilities,"audioMasterVolume",PET_AUDIO_MASTER_VOLUME_ENGINE);
+  cJSON_AddStringToObject(capabilities,"displayAod",PET_P4_AOD_ENGINE);
   cJSON_AddBoolToObject(capabilities, "touch", touch_ready);
   cJSON_AddStringToObject(audio_capture, "codec", pet_p4_audio_codec_name());
   cJSON_AddStringToObject(audio_capture, "format", "pcm_s16le");
@@ -4210,6 +4213,16 @@ bool pet_p4_handle_line_with_reply(
     }
     cJSON_Delete(root);
     return volume_serialized && volume_ok;
+  } else if (strcmp(topic, "display/aod") == 0) {
+    bool aod_ok=false;
+    char *aod_reply=pet_p4_display_aod_reply(root,state,&aod_ok);
+    bool aod_serialized=aod_reply!=NULL;
+    if (aod_reply) {
+      if (reply) reply->line=aod_reply;
+      else {if (send_line) send_line(aod_reply,ctx);cJSON_free(aod_reply);}
+    }
+    cJSON_Delete(root);
+    return aod_serialized && aod_ok;
   } else if (strcmp(topic, "audio/query") == 0) {
     pet_p4_audio_send_status();
     send_protocol_ack_if_requested(send_line, ctx, topic, payload);
@@ -4326,6 +4339,15 @@ bool pet_p4_handle_line_with_reply(
       0
     );
     if(clock)pet_p4_miniapp_clock_sync(clock,heartbeat_now_ms);
+    const cJSON *aod_weather=cJSON_GetObjectItemCaseSensitive(payload,"aod");
+    if (aod_weather && cJSON_IsObject(aod_weather)) {
+      const cJSON *aod_temp=cJSON_GetObjectItemCaseSensitive(aod_weather,"tempC");
+      const char *aod_cond=json_string(aod_weather,"cond");
+      if (cJSON_IsNumber(aod_temp) && isfinite(aod_temp->valuedouble)
+          && aod_cond && aod_cond[0]
+          && strlen(aod_cond) < PET_P4_AOD_WEATHER_COND_MAX)
+        pet_p4_display_aod_set_weather(aod_temp->valuedouble, aod_cond);
+    }
     if (host_ts_ms >= PET_P4_WALL_CLOCK_EPOCH_MIN_MS) {
       g_host_wall_clock_ms = host_ts_ms;
       g_host_wall_clock_at_ms = heartbeat_now_ms;

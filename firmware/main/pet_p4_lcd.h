@@ -18,6 +18,9 @@ esp_err_t pet_p4_lcd_init(void);
 esp_err_t pet_p4_lcd_reveal(void);
 esp_err_t pet_p4_lcd_backlight_status(void);
 esp_err_t pet_p4_lcd_keep_awake(void);
+/* 运行期 PWM 调暗(AOD 息屏);开机 reveal 已把背光脚改为普通 GPIO,
+ * 本函数用 BSP 同参 ledc_channel_config 重新挂载信号并设置占空。 */
+esp_err_t pet_p4_lcd_set_brightness(unsigned percent);
 esp_err_t pet_p4_lcd_show_color_bar(void);
 esp_err_t pet_p4_lcd_show_software_test_pattern(uint32_t phase);
 esp_err_t pet_p4_lcd_draw_rgb565(int x, int y, int width, int height, const uint16_t *pixels);
