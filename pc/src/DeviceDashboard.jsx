@@ -62,7 +62,7 @@ import { isRecoveringAsr } from "./lib/realtime-feedback.js";
 import { useAgentSessionFeed } from "./dashboard/useAgentSessionFeed.js";
 import { useDeviceVoiceRouter } from "./dashboard/useDeviceVoiceRouter.js";
 import { subscribeAsrCredentialUpdates } from "./dashboard/voice-credential-events.js";
-import { useP4SessionSync } from "./dashboard/useP4SessionSync.js";
+import { switchableDesktopSession, useP4SessionSync } from "./dashboard/useP4SessionSync.js";
 import DashboardActionsMenu from "./dashboard/DashboardActionsMenu.jsx";
 import FirmwareUpdateModal from "./dashboard/FirmwareUpdateModal.jsx";
 import DeviceDiagnosticsModal from "./dashboard/DeviceDiagnosticsModal.jsx";
@@ -82,6 +82,7 @@ export {
 } from "./lib/p4-session-service.js";
 export {
   cycleVoiceSessionId,
+  switchableDesktopSession,
   formatDeviceSessionContent,
   formatDeviceSessionTitle,
   isDeviceSessionTargetUnique,
@@ -1016,10 +1017,11 @@ export default function DeviceDashboard({ active = true, binding, onUnbind, onOp
     dismissedSessions: dismissedP4Sessions,
   });
   const activatePrismSession = useCallback((sessionId) => {
-    if (selectedAgentId !== "prism-agent" || !sessionId || sessionId === "auto") return;
     // Switch the desktop conversation without stealing window focus; an
     // unavailable bridge leaves the device-side selection untouched.
-    invoke("prism_activate_session", { sessionId }).catch((error) => {
+    const target = switchableDesktopSession(selectedAgentId, sessionId);
+    if (!target) return;
+    invoke("prism_activate_session", { sessionId: target }).catch((error) => {
       console.warn("prism session switch failed:", error);
     });
   }, [selectedAgentId]);

@@ -30,7 +30,7 @@ HachimoDock 已适配 DeepSeek Harness，但 prism-agent 是安装身份独立�
 
 ### S2.4 Rust 认证与桌面通道
 
-`dsh_auth::load(role)` 参数化 bridge 归属（`dsh` | `prism`），prism 选择 `~/.claw-pet/prism-bridge/capability.json`；`dsh_desktop::status/pair` 与 `dsh_approval` 的流/决策路径携带归属参数。`lib.rs` 增加 prism 侧 `prism_connection_status` / `prism_pair_session` 命令，并在 prism 渠道激活时启动其审批中继。
+`dsh_auth::load(role)` 参数化 bridge 归属（`Dsh` | `Prism`），prism 选择 `~/.claw-pet/prism-bridge/capability.json`；`dsh_approval::start` 与其事件流/撤销监视器携带归属参数（prism 中继只读 prism descriptor）。交付时省略 `prism_connection_status` / `prism_pair_session` 与 `dsh_desktop::status/pair` 的归属参数化：prism 桌面语音走通用 OS composer 路径（`allowedOrigins` 保持为空、无浏览器语音消费者），legacy pair 流程不接线；连接状态由探测 `/sessions` 的总线适配器承载。审批中继无条件启动，但自门控于 descriptor 存在与 USB 连接。
 
 ### S2.5 会话切换
 
@@ -50,7 +50,7 @@ HachimoDock 已适配 DeepSeek Harness，但 prism-agent 是安装身份独立�
 - [ ] T1: `FIXED_AGENT_OPTIONS` 加 prism-agent（依赖：无）
 - [ ] T2: Rust `detect_prism()` 与注册（依赖：T1）
 - [ ] T3: `adapters/prism.js` 与两处注册（依赖：T1）
-- [ ] T4: `dsh_auth` 归属参数化 + prism 命令 + 审批中继（依赖：T3）
+- [x] T4: `dsh_auth` 归属参数化 + 审批中继（`prism_activate_session` 切换命令在 S2.5）（依赖：T3）
 - [ ] T5: 设备会话选择 → `POST /sessions/activate`（依赖：T3）
 - [ ] T6: 测试（适配器测试镜像 `dsh-adapter.test.js`；检测单测注入 home）（依赖：T2、T3）
 - [ ] T7: 文档（依赖：T6）

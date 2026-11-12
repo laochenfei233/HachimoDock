@@ -11,9 +11,11 @@ import {
   P4_SESSION_LEASE_REFRESH_MS,
   cycleVoiceSessionId,
   createMissingSessionNoticeGate,
+  emitActivatedSession,
   formatDeviceSessionContent,
   formatDeviceSessionTitle,
   isDeviceSessionTargetUnique,
+  switchableDesktopSession,
 } from "./useP4SessionSync.js";
 
 test("empty-session notices suppress a continuous input burst until five quiet seconds", () => {
@@ -63,6 +65,25 @@ test("P4 Session targeting uses cwd only when duplicate titles require it", () =
     selected,
     { id: "b", name: "Build", cwd: "D:/one" },
   ]), false);
+});
+
+test("device conversation switching targets only explicit sessions of switch-capable agents", () => {
+  assert.equal(switchableDesktopSession("prism-agent", "s-1"), "s-1");
+  assert.equal(switchableDesktopSession("prism-agent", "  s-2  "), "s-2");
+  assert.equal(switchableDesktopSession("prism-agent", "auto"), "");
+  assert.equal(switchableDesktopSession("prism-agent", ""), "");
+  assert.equal(switchableDesktopSession("deepseek-harness", "s-1"), "");
+  assert.equal(switchableDesktopSession("workbuddy", "s-1"), "");
+  assert.equal(switchableDesktopSession("", "s-1"), "");
+});
+
+test("a failing switch bridge never rolls back the device-side selection", () => {
+  const seen = [];
+  assert.equal(emitActivatedSession((id) => seen.push(id), "s-1"), true);
+  assert.deepEqual(seen, ["s-1"]);
+  assert.equal(emitActivatedSession(() => { throw new Error("bridge down"); }, "s-1"), false);
+  assert.equal(emitActivatedSession(undefined, "s-1"), true);
+  assert.deepEqual(seen, ["s-1"]);
 });
 
 test("P4 card title accepts event-provided display metadata before ID fallback", () => {

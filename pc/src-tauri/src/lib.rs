@@ -7106,7 +7106,7 @@ const DSH_BUNDLED_CLI_RELATIVE_PATH: &str = "Contents/Resources/runtime/cli/bin/
 const PRISM_APP_BUNDLE_NAME: &str = "Prism Agent.app";
 #[cfg(target_os = "macos")]
 const PRISM_BUNDLE_IDENTIFIER: &str = "ai.prism.agent.desktop";
-const PRISM_BUNDLED_CLI_RELATIVE_PATH: &str = "Contents/Resources/runtime/prism";
+const PRISM_BUNDLED_CLI_RELATIVE_PATH: &str = "Contents/Resources/runtime/prism/lib/bin.js";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DshDetection {

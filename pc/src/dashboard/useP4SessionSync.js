@@ -73,6 +73,32 @@ export function cycleVoiceSessionId(currentSessionId, sessions, direction) {
   ];
 }
 
+/**
+ * The session id a switch-capable agent should move its desktop conversation
+ * to; empty when the agent has no switch bridge or the target is not explicit.
+ * Agents without a bridge (DeepSeek, WorkBuddy) never switch from the device.
+ */
+export function switchableDesktopSession(agentId, sessionId) {
+  const id = normalizeText(sessionId);
+  if (!id || id === "auto") return "";
+  return agentId === "prism-agent" ? id : "";
+}
+
+/**
+ * Fire the device-picked conversation at the switch bridge without letting a
+ * bridge failure roll back the device-side selection. Returns whether the
+ * callback ran without throwing.
+ */
+export function emitActivatedSession(callback, sessionId) {
+  if (typeof callback !== "function") return true;
+  try {
+    callback(sessionId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function formatDeviceSessionTitle(session, fallbackSessionId = "") {
   const title = p4SessionDisplayTitle(session);
   if (title) return title;
@@ -410,9 +436,7 @@ export function useP4SessionSync({
         // The device picked a conversation; agents with a switch bridge (prism)
         // also move their desktop conversation. Fire-and-forget: a bridge
         // failure must not roll back the device-side selection.
-        try {
-          onActivatedSession?.(nextSessionId);
-        } catch {}
+        emitActivatedSession(onActivatedSession, nextSessionId);
         requestBindingSync();
       });
       unlistenCurrentVoice = await listen("voice-transcript", (event) => {

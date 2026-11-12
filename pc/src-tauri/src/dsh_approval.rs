@@ -390,7 +390,11 @@ pub fn handle_device_decision(payload: &Value) -> bool {
     true
 }
 
-fn run_event_stream(usb: UsbSerialManager, cap: Capability) -> Result<(), String> {
+fn run_event_stream(
+    usb: UsbSerialManager,
+    bridge: dsh_auth::Bridge,
+    cap: Capability,
+) -> Result<(), String> {
     let connection = usb.approval_connection().ok_or("USB unavailable")?;
     let response = dsh_auth::client(Duration::from_secs(600))?
         .get(format!("{}/events", cap.base_url))
@@ -420,7 +424,7 @@ fn run_event_stream(usb: UsbSerialManager, cap: Capability) -> Result<(), String
         thread::spawn(move || {
             while !finished.load(Ordering::Acquire) {
                 if usb.approval_connection().as_ref() != Some(&connection)
-                    || dsh_auth::load("relay")
+                    || dsh_auth::load_bridge(bridge, "relay")
                         .map(|c| c.epoch != epoch)
                         .unwrap_or(true)
                 {
@@ -562,7 +566,7 @@ pub fn start(usb: UsbSerialManager, bridge: dsh_auth::Bridge) {
                 continue;
             }
         };
-        if let Err(error) = run_event_stream(usb.clone(), cap) {
+        if let Err(error) = run_event_stream(usb.clone(), bridge, cap) {
             eprintln!("[{label}] {error}; retrying in 3s");
         }
         thread::sleep(Duration::from_secs(3));
