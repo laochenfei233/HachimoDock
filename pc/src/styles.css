@@ -1393,10 +1393,10 @@ select:focus-visible {
 .llm-network-settings__results { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
 
 .api-settings__form--asr {
-  grid-template-columns: minmax(180px, 0.72fr) minmax(240px, 1.28fr) auto;
+  grid-template-columns: 1fr;
 }
 
-.api-settings__form--speech { grid-template-columns: minmax(240px, 1fr) auto; }
+.api-settings__form--speech { grid-template-columns: 1fr; }
 
 .api-settings__secret-input {
   padding: 0 11px;
@@ -14537,18 +14537,81 @@ select:focus-visible {
   gap: var(--space-2, 8px);
 }
 
-/* ---- API 配置：对话大模型预设与语音合成子区（2026-09-18） ---- */
-.api-settings__presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: var(--space-2, 8px);
+/* ---- API 配置：服务商分段控件与语音表单（2026-11-13，iOS 风格单选） ---- */
+.api-settings__segments {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 3px;
+  margin: 2px 0 14px;
+  width: fit-content;
+  max-width: 100%;
+  background: var(--surface-sunken, #eef0f3);
+  border-radius: 9px;
 }
 
-.api-settings__preset.is-active {
-  border-color: var(--accent, #f97316);
-  color: var(--accent, #f97316);
-  font-weight: 700;
+.api-settings__segment {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  min-height: 30px;
+  min-width: 86px;
+  padding: 0 16px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-muted, #727985);
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 100ms ease-out;
+}
+
+.api-settings__segment:hover:not(:disabled):not(.is-active) {
+  color: var(--text-primary, #20242b);
+}
+
+.api-settings__segment:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.api-settings__segment.is-active {
+  background: var(--surface, #fff);
+  color: var(--text-primary, #20242b);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.14), 0 0 0 0.5px rgba(15, 23, 42, 0.05);
+}
+
+.api-settings__segment:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.api-settings__segment:focus-visible {
+  outline: 2px solid var(--accent, #ff6700);
+  outline-offset: 2px;
+}
+
+.api-settings__save-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+@media (max-width: 620px) {
+  .api-settings__segments {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .api-settings__segment {
+    transition: none;
+  }
+  .api-settings__segment:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .api-settings__preset-summary {

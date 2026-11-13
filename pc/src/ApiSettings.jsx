@@ -526,14 +526,14 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
           {usageHelp.pending && <p className="usage-help__notice">按键配置有修改，请先同步到设备。</p>}
           <details><summary>使用前需要什么</summary><p>请保持设备连接电脑，并让 Pet Manager 持续运行。默认使用豆包 ASR 2.0 和 TTS 2.0；更换服务商后，每个服务商需分别配置 API Key。</p></details>
         </div>
-        <div className="api-settings__presets" role="radiogroup" aria-label="语音识别服务商">
+        <div className="api-settings__segments" role="radiogroup" aria-label="语音识别服务商">
           {ASR_PROVIDER_PRESETS.map((preset) => (
             <button
               key={preset.id}
               type="button"
               role="radio"
               aria-checked={speech.asrProvider === preset.id}
-              className={"btn-ghost btn-sm api-settings__preset" + (speech.asrProvider === preset.id ? " is-active" : "")}
+              className={"api-settings__segment" + (speech.asrProvider === preset.id ? " is-active" : "")}
               onClick={() => setSpeech((current) => selectAsrProvider(current, preset.id))}
               disabled={speech.asrPending || speech.loading}
             >
@@ -556,15 +556,17 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
                 disabled={speech.asrPending || speech.loading}
               />
             </label>
-            <button
-              type="button"
-              className="btn-primary btn-sm api-settings__save"
-              onClick={saveAndTestAsr}
-              disabled={speech.asrPending || speech.loading}
-            >
-              {speech.asrPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-              保存并测试
-            </button>
+            <div className="api-settings__save-row">
+              <button
+                type="button"
+                className="btn-primary btn-sm api-settings__save"
+                onClick={saveAndTestAsr}
+                disabled={speech.asrPending || speech.loading}
+              >
+                {speech.asrPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                保存并测试
+              </button>
+            </div>
           </div>
         ) : (
           <div className="api-settings__form api-settings__form--asr">
@@ -610,15 +612,17 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
                 disabled={speech.asrPending || speech.loading}
               />
             </label>
-            <button
-              type="button"
-              className="btn-primary btn-sm api-settings__save"
-              onClick={saveSpeechAsr}
-              disabled={speech.asrPending || speech.loading}
-            >
-              {speech.asrPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-              保存
-            </button>
+            <div className="api-settings__save-row">
+              <button
+                type="button"
+                className="btn-primary btn-sm api-settings__save"
+                onClick={saveSpeechAsr}
+                disabled={speech.asrPending || speech.loading}
+              >
+                {speech.asrPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                保存
+              </button>
+            </div>
           </div>
         )}
         <div className={`api-settings__result${resultToneClass(speech.asrTone)}`} role="status">
@@ -639,14 +643,14 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
           </span>
         )}
       >
-        <div className="api-settings__presets" role="radiogroup" aria-label="语音合成服务商">
+        <div className="api-settings__segments" role="radiogroup" aria-label="语音合成服务商">
           {TTS_PROVIDER_PRESETS.map((preset) => (
             <button
               key={preset.id}
               type="button"
               role="radio"
               aria-checked={speech.ttsProvider === preset.id}
-              className={"btn-ghost btn-sm api-settings__preset" + (speech.ttsProvider === preset.id ? " is-active" : "")}
+              className={"api-settings__segment" + (speech.ttsProvider === preset.id ? " is-active" : "")}
               onClick={() => setSpeech((current) => selectTtsProvider(current, preset.id))}
               disabled={speech.ttsPending || speech.loading}
             >
@@ -741,15 +745,17 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
               />
               <span className="muted small">同一服务商识别/合成共用一把 Key。</span>
             </label>
-            <button
-              type="button"
-              className="btn-primary btn-sm api-settings__save"
-              onClick={saveSpeechTts}
-              disabled={speech.ttsPending || speech.loading}
-            >
-              {speech.ttsPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-              保存
-            </button>
+            <div className="api-settings__save-row">
+              <button
+                type="button"
+                className="btn-primary btn-sm api-settings__save"
+                onClick={saveSpeechTts}
+                disabled={speech.ttsPending || speech.loading}
+              >
+                {speech.ttsPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                保存
+              </button>
+            </div>
           </div>
         )}
         <div className={`api-settings__result${resultToneClass(speech.ttsTone)}`} role="status">
@@ -762,14 +768,14 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
 
       <Card title="对话大模型" subtitle="决定宠物在「实时对话」中如何理解和回答。选择一家服务并填写 API Key 即可。此配置用于和宠物聊天，不影响 ChatGPT、Claude 等 Agent 的语音输入。">
         <UsageHelp />
-        <div className="api-settings__presets" role="radiogroup" aria-label="对话大模型">
+        <div className="api-settings__segments" role="radiogroup" aria-label="对话大模型">
           {[...LLM_PRESETS, { id: "custom", label: "自定义" }].map((preset) => (
             <button
               key={preset.id}
               type="button"
               role="radio"
               aria-checked={voiceChat.llmProvider === preset.id}
-              className={"btn-ghost btn-sm api-settings__preset" + (voiceChat.llmProvider === preset.id ? " is-active" : "")}
+              className={"api-settings__segment" + (voiceChat.llmProvider === preset.id ? " is-active" : "")}
               onClick={() => setVoiceChat((current) => selectLlmProvider(current, preset.id))}
               disabled={voiceChat.llmPending || voiceChat.loading}
             >
@@ -819,15 +825,17 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
               disabled={voiceChat.llmPending || voiceChat.loading}
             />
           </label>
-          <button
-            type="button"
-            className="btn-primary btn-sm api-settings__save"
-            onClick={saveLlm}
-            disabled={voiceChat.llmPending || voiceChat.loading}
-          >
-            {voiceChat.llmPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-            保存
-          </button>
+          <div className="api-settings__save-row">
+            <button
+              type="button"
+              className="btn-primary btn-sm api-settings__save"
+              onClick={saveLlm}
+              disabled={voiceChat.llmPending || voiceChat.loading}
+            >
+              {voiceChat.llmPending ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+              保存
+            </button>
+          </div>
         </div>
         <div className={`api-settings__result${resultToneClass(voiceChat.llmTone)}`} role="status">
           {voiceChat.llmTone === "error" || voiceChat.llmTone === "warning"
