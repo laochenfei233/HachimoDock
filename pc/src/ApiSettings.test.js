@@ -146,7 +146,6 @@ test("API settings owns voice and generation credential inputs", () => {
   assert.match(source, /title="语音识别"\s+subtitle=\{\([\s\S]*?href="https:\/\/docs\.volcengine\.com\/docs\/DoubaoVoice\/APIKeyUsage\?lang=zh"[\s\S]*?Key 获取方式[\s\S]*?actions=\{/);
   assert.match(source, /title="语音合成"\s+subtitle="[^"]*识别与合成共用一个 API Key/);
   assert.match(source, /<details>[\s\S]*ASR 2\.0 和 TTS 2\.0/);
-  assert.match(source, /MiMo 暂不支持语音识别，请选择其他服务商/);
   assert.match(source, /豆包语音合成与识别共用一把 Key；资源编号 \{speech\.ttsResourceId/);
   assert.match(source, /https:\/\/ark\.volcengine\.com\/model\/detail\?name=doubao-seedance-2-0-mini/);
   assert.match(source, /provider\.id === "volcengine"/);
@@ -175,7 +174,7 @@ test("speech provider presets supply per-service defaults", () => {
   assert.deepEqual(ASR_PROVIDER_PRESETS.map(({ id, label, model }) => ({ id, label, model })), [
     { id: "volcengine", label: "豆包", model: "volc.seedasr.sauc.duration" },
     { id: "dashscope", label: "通义千问", model: "paraformer-realtime-v2" },
-    { id: "mimo", label: "MiMo", model: "" },
+    { id: "mimo", label: "MiMo", model: "mimo-v2.5-asr" },
     { id: "custom", label: "自定义", model: "" },
   ]);
   assert.deepEqual(TTS_PROVIDER_PRESETS.map(({ id, label, model, voice }) => ({ id, label, model, voice })), [

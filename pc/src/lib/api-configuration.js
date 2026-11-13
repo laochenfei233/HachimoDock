@@ -51,11 +51,11 @@ export const ASR_RESOURCE_OPTIONS = [
   { id: "volc.seedasr.sauc.duration", label: "豆包 ASR 2.0" },
 ];
 
-/** 语音识别服务商默认值（与 Rust `voice_chat_settings::SPEECH_PRESETS` 一致），模型可修改；MiMo 暂无公开 ASR。 */
+/** 语音识别服务商默认值（与 Rust `voice_chat_settings::SPEECH_PRESETS` 一致），模型可修改；MiMo 走 Chat Completions 短语音识别。 */
 export const ASR_PROVIDER_PRESETS = [
   { id: "volcengine", label: "豆包", model: "volc.seedasr.sauc.duration" },
   { id: "dashscope", label: "通义千问", baseUrl: "https://dashscope.aliyuncs.com", model: "paraformer-realtime-v2" },
-  { id: "mimo", label: "MiMo", baseUrl: "https://api.xiaomimimo.com/v1", model: "" },
+  { id: "mimo", label: "MiMo", baseUrl: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-asr" },
   { id: "custom", label: "自定义", model: "" },
 ];
 

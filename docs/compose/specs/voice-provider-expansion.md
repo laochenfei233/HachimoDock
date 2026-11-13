@@ -35,11 +35,11 @@ commits: 1586fec..a70662b
 
 统一 provider id：`volcengine`（豆包，默认）、`dashscope`（通义千问/阿里云百炼）、`mimo`（小米）、`custom`（通用 OpenAI 兼容）。
 
-- ASR 可用服务商：`volcengine`、`dashscope`、`custom`；`mimo` 仅在其公开 ASR API 核实可用后加入（见 T7）。
+- ASR 可用服务商：`volcengine`、`dashscope`、`mimo`、`custom`（MiMo ASR 为交付后追加，见 S2.8）。
 - TTS 可用服务商：`volcengine`、`dashscope`、`mimo`、`custom`。
 - 每个服务商预设默认（provider → baseUrl / 默认模型 / 默认音色）：
   - `dashscope`：ASR 模型 `paraformer-realtime-v2`；TTS 模型 `cosyvoice-v3-flash`；baseUrl `https://dashscope.aliyuncs.com`（其 ASR/TTS 走 DashScope 原生协议，不是 OpenAI 兼容音频端点）。音色预设：`longxiaochun_v3`、`longshu_v3`、`longanrou_v3`、`longshange_v3`、`longanxuan_v3`、`longlaotie_v3`（+ 自由填写）。
-  - `mimo`：baseUrl `https://api.xiaomimimo.com/v1`。已核实（mimo.mi.com/docs，2026-11-12）：TTS `mimo-v2.5-tts` 走 Chat Completions 兼容端点（assistant 消息携带待合成文本，`audio.voice` 指定音色，响应 `choices[].message.audio.data` 为 Base64 WAV）；预设音色 `mimo_default` 等。ASR `mimo-v2.5-asr` 仅有开源权重、无公开 API——**MiMo 不进 ASR 服务商列表**。
+  - `mimo`：baseUrl `https://api.xiaomimimo.com/v1`。已核实（mimo.mi.com/docs，2026-11-12）：TTS `mimo-v2.5-tts` 走 Chat Completions 兼容端点（assistant 消息携带待合成文本，`audio.voice` 指定音色，响应 `choices[].message.audio.data` 为 Base64 WAV）；预设音色 `mimo_default` 等。ASR `mimo-v2.5-asr` 同端点短语音识别（初版评估遗漏，交付后经用户指正补齐，见 S2.8）。
   - `custom`：用户自填 baseUrl + 模型 + 音色，适配器按 OpenAI 兼容 `/audio/speech`、`/audio/transcriptions` 调用（覆盖 SiliconFlow、私有部署等）。
 
 ### S2.2 配置与凭据（Rust `voice_chat_settings.rs`）
@@ -101,6 +101,10 @@ commits: 1586fec..a70662b
 ### S2.7 形象声音 UI（PersonaVoiceModal.jsx）
 
 声音列新增「合成服务商」选择（跟随全局/豆包/通义千问/MiMo/自定义）；音色选择随 provider 切换：豆包 = 现有目录；dashscope = 预设音色 + 手填；mimo/custom = 手填；复刻音色输入仅在豆包显示；语速滑杆保留（适配器不支持时忽略）。试听（`persona_voice_preview`）按当前选择的 provider 试听，gating 改为该 provider 凭据就绪。
+
+### S2.8 MiMo ASR（交付后追加，2026-11-13）
+
+初版评估判定「MiMo 无公开 ASR」有误——`mimo-v2.5-asr` 走与 TTS 同一 Chat Completions 端点的短语音识别（用户指正并核实 mimo.mi.com/docs）：整轮 PCM 加 WAV 头，以 `input_audio`（Base64 data URL，≤10MB，仅 wav/mp3）上传，`asr_options.language` 支持 auto/zh/en，转写文本在 `choices[].message.content`。实现复用一次性转写架构：`mimo_tts::transcribe` 适配器 + `asr_engine::Transcriber::Mimo` 路由（无流式 Partial，仅 Final），预设模型 `mimo-v2.5-asr`（可手填）。shortcut: 短语音一次性输出对 PTT 场景足够；需要边说边出字时再评估其流式接口。
 
 ## [S3] Scope
 

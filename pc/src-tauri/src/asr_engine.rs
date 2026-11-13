@@ -30,11 +30,27 @@ pub fn create(callback: impl Fn(StreamingSpeechEvent) + Send + Sync + 'static)
                 base_url: config.base_url, api_key: config.api_key, model: config.model,
                 language: config.language,
             },
+            Transcriber::OpenAi,
             callback,
         ))),
-        "mimo" => Err("小米 MiMo 暂不支持语音识别，请选择豆包、通义千问或自定义服务商".into()),
+        "mimo" => Ok(Box::new(OneShotAsr::start(
+            crate::openai_audio::OpenAiAsrConfig {
+                base_url: config.base_url, api_key: config.api_key, model: config.model,
+                language: config.language,
+            },
+            Transcriber::Mimo,
+            callback,
+        ))),
         other => Err(format!("不支持的语音识别服务商：{other}")),
     }
+}
+
+/// 一次性转写的两种请求形态：标准 multipart /audio/transcriptions 与
+/// MiMo 的 Chat Completions input_audio。
+#[derive(Clone, Copy)]
+enum Transcriber {
+    OpenAi,
+    Mimo,
 }
 
 /// OpenAI 兼容 /audio/transcriptions 的一次性识别轮次：缓冲整轮 PCM，finish 时统一上传，
@@ -53,7 +69,8 @@ struct OneShotBuffer {
 }
 
 impl OneShotAsr {
-    pub fn start(config: crate::openai_audio::OpenAiAsrConfig, callback: impl Fn(StreamingSpeechEvent) + Send + Sync + 'static) -> Self {
+    pub fn start(config: crate::openai_audio::OpenAiAsrConfig, transcriber: Transcriber,
+        callback: impl Fn(StreamingSpeechEvent) + Send + Sync + 'static) -> Self {
         let inner = Arc::new(Mutex::new(OneShotBuffer::default()));
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_buffer = inner.clone();
@@ -75,7 +92,14 @@ impl OneShotAsr {
             };
             if worker_cancelled.load(Ordering::SeqCst) { return; }
             callback(StreamingSpeechEvent::Ready);
-            let text = match crate::openai_audio::transcribe(&config, &pcm).await {
+            let result = match transcriber {
+                Transcriber::OpenAi => crate::openai_audio::transcribe(&config, &pcm).await,
+                Transcriber::Mimo => crate::mimo_tts::transcribe(&crate::mimo_tts::MimoAsrConfig {
+                    base_url: config.base_url, api_key: config.api_key, model: config.model,
+                    language: config.language,
+                }, &pcm).await,
+            };
+            let text = match result {
                 Ok(text) => text,
                 Err(error) => {
                     callback(StreamingSpeechEvent::Error(error));

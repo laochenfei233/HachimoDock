@@ -541,9 +541,7 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
             </button>
           ))}
         </div>
-        {speech.asrProvider === "mimo" ? (
-          <p className="api-settings__preset-summary muted small">MiMo 暂不支持语音识别，请选择其他服务商。</p>
-        ) : speech.asrProvider === "volcengine" ? (
+        {speech.asrProvider === "volcengine" ? (
           <div className="api-settings__form api-settings__form--speech">
             <label className="ui-field" htmlFor="api-settings-asr-key">
               <span className="ui-field__label">API Key（识别与合成共用）</span>
@@ -619,14 +617,12 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
             </button>
           </div>
         )}
-        {speech.asrProvider !== "mimo" && (
-          <div className={`api-settings__result${resultToneClass(speech.asrTone)}`} role="status">
-            {speech.asrTone === "error" || speech.asrTone === "warning"
-              ? <AlertCircle size={13} />
-              : <CheckCircle2 size={13} />}
-            {speech.asrMessage}
-          </div>
-        )}
+        <div className={`api-settings__result${resultToneClass(speech.asrTone)}`} role="status">
+          {speech.asrTone === "error" || speech.asrTone === "warning"
+            ? <AlertCircle size={13} />
+            : <CheckCircle2 size={13} />}
+          {speech.asrMessage}
+        </div>
       </Card>
 
       <Card

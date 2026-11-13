@@ -1,10 +1,13 @@
 /*
- * [Input] 小米 MiMo 开放平台语音合成的 API Key、模型（mimo-v2.5-tts 系列）与音色 ID。
- * [Output] MiMo 语音合成走 OpenAI Chat Completions 兼容端点（POST /v1/chat/completions，
+ * [Input] 小米 MiMo 开放平台语音合成的 API Key、模型（mimo-v2.5-tts 系列）与音色 ID；
+ *         以及短语音识别（mimo-v2.5-asr）的 API Key、模型与语言。
+ * [Output] TTS 走 OpenAI Chat Completions 兼容端点（POST /v1/chat/completions，
  *          待合成文本放在 assistant 消息，audio.voice 指定音色），响应里
  *          choices[].message.audio.data 为 Base64 WAV；解码 WAV 头得到实际采样率，
  *          重采样为 16 kHz 单声道 S16LE PCM 后回调。语速参数不受支持，忽略。
- * [Pos] TTS 适配器 in pc/src-tauri/src。
+ *          ASR 走同一端点的短语音识别：input_audio（Base64 WAV data URL，≤10MB），
+ *          整轮一次性转写，返回 choices[].message.content 文本。
+ * [Pos] MiMo 适配器（TTS + ASR） in pc/src-tauri/src。
  * [Sync] 更新此 header。
  */
 
@@ -164,6 +167,67 @@ async fn read_limited(mut response: reqwest::Response, limit: usize) -> String {
     String::from_utf8_lossy(&bytes).trim().replace('\n', " ")
 }
 
+// ---- ASR（Chat Completions 短语音识别） ----------------------------------------------------------
+
+pub struct MimoAsrConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub language: Option<String>,
+}
+
+/// 组装 MiMo 短语音识别请求体：整轮 PCM 加 WAV 头后以 input_audio（Base64 data URL）上传。
+/// 语言缺省 auto；仅支持 auto/zh/en。
+pub fn chat_asr_payload(model: &str, wav_base64: &str, language: Option<&str>) -> serde_json::Value {
+    let language = language.map(str::trim).filter(|l| !l.is_empty() && *l != "auto");
+    let mut payload = serde_json::json!({
+        "model": model.trim(),
+        "messages": [{
+            "role": "user",
+            "content": [{
+                "type": "input_audio",
+                "input_audio": {"data": format!("data:audio/wav;base64,{wav_base64}")},
+            }],
+        }],
+    });
+    if let Some(language) = language {
+        payload["asr_options"] = serde_json::json!({"language": language});
+    }
+    payload
+}
+
+/// 一次性识别：整轮 PCM（16 kHz 单声道 S16LE）→ WAV → Chat Completions → 文本。
+pub async fn transcribe(cfg: &MimoAsrConfig, pcm_16k: &[u8]) -> Result<String, String> {
+    if pcm_16k.is_empty() { return Ok(String::new()); }
+    let pcm = if pcm_16k.len() > crate::openai_audio::MAX_TRANSCRIBE_PCM_BYTES {
+        &pcm_16k[..crate::openai_audio::MAX_TRANSCRIBE_PCM_BYTES]
+    } else {
+        pcm_16k
+    };
+    let wav_base64 = base64::engine::general_purpose::STANDARD.encode(crate::openai_audio::wav_wrap(pcm));
+    let payload = chat_asr_payload(&cfg.model, &wav_base64, cfg.language.as_deref());
+    let url = format!("{}/chat/completions", cfg.base_url.trim().trim_end_matches('/'));
+    let client = crate::llm_network::client(REQUEST_TIMEOUT)?;
+    let response = client.post(&url).bearer_auth(cfg.api_key.trim()).json(&payload).send().await
+        .map_err(|e| crate::llm_network::connection_error(&e))?;
+    let status = response.status();
+    let raw = read_limited(response, 64 * 1024).await;
+    if !status.is_success() {
+        return Err(format!("语音识别请求失败（HTTP {}）{}", status.as_u16(), raw.replace('\n', " ")));
+    }
+    transcript_from_response(raw.trim())
+}
+
+/// 从 Chat Completions 响应提取转写文本（choices[].message.content），并识别 error 载荷。
+fn transcript_from_response(raw: &str) -> Result<String, String> {
+    let value: serde_json::Value = serde_json::from_str(raw).map_err(|_| "语音识别响应格式不正确")?;
+    if let Some(message) = value["error"]["message"].as_str() {
+        return Err(format!("语音识别被服务商拒绝：{message}"));
+    }
+    value["choices"][0]["message"]["content"].as_str().map(str::trim).map(str::to_owned)
+        .ok_or_else(|| "语音识别响应缺少文本".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +275,29 @@ mod tests {
         assert!(ok["choices"][0]["message"]["audio"]["data"].as_str().is_some());
         let err = serde_json::json!({"error": {"message": "bad voice"}});
         assert_eq!(err["error"]["message"].as_str(), Some("bad voice"));
+    }
+
+    #[test]
+    fn chat_asr_payload_carries_wav_data_url_and_optional_language() {
+        let auto = chat_asr_payload("mimo-v2.5-asr", "QUJD", None);
+        assert_eq!(auto["model"], "mimo-v2.5-asr");
+        assert_eq!(auto["messages"][0]["role"], "user");
+        let audio = &auto["messages"][0]["content"][0]["input_audio"]["data"];
+        assert_eq!(audio.as_str().map(|value| value.to_string()), Some("data:audio/wav;base64,QUJD".to_string()));
+        assert!(auto.get("asr_options").is_none());
+        let zh = chat_asr_payload("m", "QQ==", Some("zh"));
+        assert_eq!(zh["asr_options"]["language"], "zh");
+        assert_eq!(chat_asr_payload("m", "QQ==", Some(" auto ")).get("asr_options"), None);
+    }
+
+    #[test]
+    fn asr_transcript_is_extracted_from_chat_message_content() {
+        let ok = serde_json::json!({"choices": [{"message": {"role": "assistant", "content": " 今天天气不错 "}}]});
+        assert_eq!(transcript_from_response(&ok.to_string()).unwrap(), "今天天气不错");
+        let err = serde_json::json!({"error": {"message": "quota exceeded"}});
+        assert!(transcript_from_response(&err.to_string()).unwrap_err().contains("quota exceeded"));
+        let empty = serde_json::json!({"choices": []});
+        assert!(transcript_from_response(&empty.to_string()).is_err());
     }
 
     fn wav_float_bytes(sample_rate: u32, samples: &[f32]) -> Vec<u8> {
