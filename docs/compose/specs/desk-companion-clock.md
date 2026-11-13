@@ -12,6 +12,11 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 
 **What was built** — desk-companion-clock：host:true 的 composition v2 应用工具。纯黑背景（surface.background=0）上，左侧时钟簇居中显示 PC 本地时区的 HH:MM（分钟补零，96px/weight600 白色）、上方中文日期（YYYY年M月D日，灰）、下方天气与气温（Open-Meteo 宁波坐标，WMO 码映射中文天气文案 + 温度℃，灰）；右侧 200×200 桌宠 PNG（设备当前形象 builtin-terrier 西高地白梗的静态帧，扒桌沿姿势）。SW1 手动刷新天气（host.refresh→wx:refresh）。天气缺失/失败时天气行显示"等待数据"，时间日期不受影响。
 
+**Update (v4, 2026-11-13)** — 用户指定日期行格式 `M月D日 星期x`。clock 源无 weekday，新增 wd/wk
+computed 源实现 Sakamoto 算法（6 用例引擎验证全对，含闰年 2/29 与跨年分支）；cjk 图集去"年"加
+"星期一~六"（192×128），pet 缩 190×190 腾预算（97540/98304）。校验 OK + smoke CONTRACT_OK，
+hash dee12e8a4dfaad56（jobId 20261113T085735113672Z-806e5ebb）。
+
 **Update (v3, 2026-11-12)** — 用户反馈时间边缘模糊、字体要更大、桌宠不能动。修复：① 高清字形图集
 （时间 96px=64px 图集 1.5x 双线性，日期/天气 28/30→32px 1:1）根因是内置点阵字库放大；② 桌宠加
 渲染器驱动 float 浮动（host 组件无 tick 的动画正解）；图集 alpha 首版被 paste 蒙版破坏（alpha 全 0）
@@ -61,6 +66,10 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
   - `wxt` = 等待态空串；否则 " " + str(coalesce(temperature_2m,"—")) + "℃"
   - `fmt` = object{time, date, wx: wxa+wxt}；time = `str(hour) + ":" + (minute<10 ? "0" : "") + str(minute)`；date = `str(year) + "年" + str(month) + "月" + str(day) + "日"`
   - fmt 不依赖 wx 的缺失字段失败（coalesce 保 fmt 健康，时间/日期不受天气影响）；等待态不出现"℃"尾巴。
+- `wd`/`wk` computed 源（v4）：clock 无 weekday 字段，用受限表达式实现 Sakamoto 算法——
+  wd = (y' + y'/4 − y'/100 + y'/400 + t[month−1] + day) mod 7（y' = year − (month<3)，t = array 12 项，
+  get 按月取偏移）；wk = eq 链映射"星期日..星期六"。源数正好 8（v2 上限）；闰年/跨年分支经
+  PC 同源 evaluate 引擎 6 用例验证（2026-11-13 星期五、2028-02-29 星期二、2024-02-29 星期四等）。
 - `bindings` 精确覆盖 3 个变量，各带 fallback：timeStr→"--:--"、dateStr→"—"、wxStr→"等待数据"。
 
 ### S2.3 交互
@@ -74,13 +83,15 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 - `assets/pet.png`：设备当前形象 **builtin-terrier（西高地白梗）**——用户确认不做系统级
   动态形象读取，直接把当前形象导成静态帧。从 `HachimiDock/terrier-clips/idle.begging.mp4`
   第 60% 帧提取：420×420 裁切（狗+桌沿+动感线）→ 压黑位 BLACK_POINT=30（素材近黑底与
-  纯黑画布无缝融合，四角全黑）→ 200×200（P4I1 预算内，v1.0.0 哈希 8b9d7e5095b53646）。
+  纯黑画布无缝融合，四角全黑）→ 190×190（v4 起缩小 10% 为星期字形腾图集预算，
+  节点 x=445,y=155）。
 - 提取脚本留在组件目录之外（`generated/_scratch/extract_pet_from_clip.py`），包内只保留最终 PNG。
   （v1 首版曾用手绘哈基米风金毛占位，hash 05e02cc0e0eb9afc，被本版替代。）
 - image 节点声明 `motion: "float"`：渲染器驱动的上下浮动动效，无需设备 tick（host 组件禁 tick）。
 - v3 高清字形：surface.typography="p4-app-type-v1" + fonts 两个图集——digits（"0123456789:"，
   cell [48,64]，Noto Sans SC Bold 64px 渲染，192×192）与 cjk32（"年月日晴多云阴雾雨雪阵雷等待数据℃—"，
-  cell [32,32]，32px，192×96）；图集像素预算 95296/98304；"." 与 "-" 走内置字库回退；
+  cell [32,32]，32px）；v4 cjk32 换为 24 字符 192×128（去"年"、加"星期一~六"；"—"与"-"、"."走内置
+  字库回退——内置对 ·°℃–—−… 有原生几何补字）；图集像素预算 97540/98304（pet 190×190）；
   字体授权声明在 `licenses/noto-sans-sc-OFL.txt`（Noto Sans CJK 与思源黑体同源，SIL OFL 1.1）。
   构建脚本 `generated/_scratch/build_atlas.py`。hash 64f21ec1a6078572。
 
