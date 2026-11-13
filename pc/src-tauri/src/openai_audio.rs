@@ -169,6 +169,7 @@ pub fn resample_mono_16k(sample_le_bytes: &[u8], state: &mut ResampleState, on_p
 
 // ---- ASR（一次性转写） ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct OpenAiAsrConfig {
     pub base_url: String,
     pub api_key: String,
