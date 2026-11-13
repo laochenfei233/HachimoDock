@@ -167,13 +167,16 @@ async fn read_limited(mut response: reqwest::Response, limit: usize) -> String {
     String::from_utf8_lossy(&bytes).trim().replace('\n', " ")
 }
 
-// ---- ASR（Chat Completions 短语音识别） ----------------------------------------------------------
+// ---- ASR（Chat Completions 短语音识别；MiMo 与通义千问 qwen3-asr 同形状共用） ---------------------
 
-pub struct MimoAsrConfig {
+#[derive(Clone)]
+pub struct ChatAsrConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
     pub language: Option<String>,
+    /// 通义千问需要 /compatible-mode/v1 前缀；MiMo（/v1 端点）为 false。
+    pub compatible_mode: bool,
 }
 
 /// 组装 MiMo 短语音识别请求体：整轮 PCM 加 WAV 头后以 input_audio（Base64 data URL）上传。
@@ -196,8 +199,18 @@ pub fn chat_asr_payload(model: &str, wav_base64: &str, language: Option<&str>) -
     payload
 }
 
+/// Chat Completions ASR 端点：compatible_mode 服务商补 /compatible-mode/v1 前缀
+/// （用户已填 compatible-mode 端点时不重复拼接）；MiMo 直连 {base}/chat/completions。
+pub fn chat_asr_url(base_url: &str, compatible_mode: bool) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    match compatible_mode && !base.contains("/compatible-mode") {
+        true => format!("{base}/compatible-mode/v1/chat/completions"),
+        false => format!("{base}/chat/completions"),
+    }
+}
+
 /// 一次性识别：整轮 PCM（16 kHz 单声道 S16LE）→ WAV → Chat Completions → 文本。
-pub async fn transcribe(cfg: &MimoAsrConfig, pcm_16k: &[u8]) -> Result<String, String> {
+pub async fn transcribe(cfg: &ChatAsrConfig, pcm_16k: &[u8]) -> Result<String, String> {
     if pcm_16k.is_empty() { return Ok(String::new()); }
     let pcm = if pcm_16k.len() > crate::openai_audio::MAX_TRANSCRIBE_PCM_BYTES {
         &pcm_16k[..crate::openai_audio::MAX_TRANSCRIBE_PCM_BYTES]
@@ -206,7 +219,7 @@ pub async fn transcribe(cfg: &MimoAsrConfig, pcm_16k: &[u8]) -> Result<String, S
     };
     let wav_base64 = base64::engine::general_purpose::STANDARD.encode(crate::openai_audio::wav_wrap(pcm));
     let payload = chat_asr_payload(&cfg.model, &wav_base64, cfg.language.as_deref());
-    let url = format!("{}/chat/completions", cfg.base_url.trim().trim_end_matches('/'));
+    let url = chat_asr_url(&cfg.base_url, cfg.compatible_mode);
     let client = crate::llm_network::client(REQUEST_TIMEOUT)?;
     let response = client.post(&url).bearer_auth(cfg.api_key.trim()).json(&payload).send().await
         .map_err(|e| crate::llm_network::connection_error(&e))?;
@@ -288,6 +301,15 @@ mod tests {
         let zh = chat_asr_payload("m", "QQ==", Some("zh"));
         assert_eq!(zh["asr_options"]["language"], "zh");
         assert_eq!(chat_asr_payload("m", "QQ==", Some(" auto ")).get("asr_options"), None);
+    }
+
+    #[test]
+    fn chat_asr_url_adds_compatible_mode_prefix_once() {
+        // 通义千问预设端点需补 compatible-mode 前缀；MiMo 的 /v1 与用户自填的 compatible-mode 直接连。
+        assert_eq!(chat_asr_url("https://dashscope.aliyuncs.com", true), "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
+        assert_eq!(chat_asr_url("https://dashscope.aliyuncs.com/compatible-mode/v1/", true), "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
+        assert_eq!(chat_asr_url("https://api.xiaomimimo.com/v1", false), "https://api.xiaomimimo.com/v1/chat/completions");
+        assert_eq!(chat_asr_url("https://relay.invalid/v1", false), "https://relay.invalid/v1/chat/completions");
     }
 
     #[test]

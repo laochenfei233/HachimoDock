@@ -17,6 +17,15 @@ pub fn create(callback: impl Fn(StreamingSpeechEvent) + Send + Sync + 'static)
     let config = crate::voice_chat_settings::asr_engine_config()?;
     match config.provider.as_str() {
         "volcengine" => Ok(Box::new(crate::volcengine_asr::StreamingSpeechRecognizer::start(callback)?)),
+        // 通义千问二选一：qwen3-asr*（Chat Completions HTTP 一次性）或 paraformer*（WS 流式），
+        // 由模型名决定——保存的模型名即协议选择。
+        "dashscope" if dashscope_asr_uses_chat(&config.model) => Ok(Box::new(OneShotAsr::start(
+            Transcriber::Chat(crate::mimo_tts::ChatAsrConfig {
+                base_url: config.base_url, api_key: config.api_key, model: config.model,
+                language: config.language, compatible_mode: true,
+            }),
+            callback,
+        ))),
         "dashscope" => Ok(Box::new(crate::dashscope_asr::DashscopeAsr::start(
             crate::dashscope_asr::DashscopeAsrConfig {
                 api_key: config.api_key, base_url: config.base_url, model: config.model,
@@ -26,31 +35,34 @@ pub fn create(callback: impl Fn(StreamingSpeechEvent) + Send + Sync + 'static)
         // shortcut: OpenAI 兼容转写是一次性接口，整轮只有 Final 没有部分结果；
         // 出现低延迟需求时为该类服务商补流式协议。
         "custom" => Ok(Box::new(OneShotAsr::start(
-            crate::openai_audio::OpenAiAsrConfig {
+            Transcriber::OpenAi(crate::openai_audio::OpenAiAsrConfig {
                 base_url: config.base_url, api_key: config.api_key, model: config.model,
                 language: config.language,
-            },
-            Transcriber::OpenAi,
+            }),
             callback,
         ))),
         "mimo" => Ok(Box::new(OneShotAsr::start(
-            crate::openai_audio::OpenAiAsrConfig {
+            Transcriber::Chat(crate::mimo_tts::ChatAsrConfig {
                 base_url: config.base_url, api_key: config.api_key, model: config.model,
-                language: config.language,
-            },
-            Transcriber::Mimo,
+                language: config.language, compatible_mode: false,
+            }),
             callback,
         ))),
         other => Err(format!("不支持的语音识别服务商：{other}")),
     }
 }
 
-/// 一次性转写的两种请求形态：标准 multipart /audio/transcriptions 与
-/// MiMo 的 Chat Completions input_audio。
-#[derive(Clone, Copy)]
+/// 一次性转写的两种请求形态：标准 multipart /audio/transcriptions，或
+/// Chat Completions input_audio（MiMo / 通义千问 qwen3-asr）。
+#[derive(Clone)]
 enum Transcriber {
-    OpenAi,
-    Mimo,
+    OpenAi(crate::openai_audio::OpenAiAsrConfig),
+    Chat(crate::mimo_tts::ChatAsrConfig),
+}
+
+/// 通义千问 ASR 模型 → 协议：qwen3-asr 系走 HTTP Chat 一次性，paraformer 系走 WS 流式。
+pub(crate) fn dashscope_asr_uses_chat(model: &str) -> bool {
+    model.trim().to_ascii_lowercase().contains("qwen")
 }
 
 /// OpenAI 兼容 /audio/transcriptions 的一次性识别轮次：缓冲整轮 PCM，finish 时统一上传，
@@ -69,7 +81,7 @@ struct OneShotBuffer {
 }
 
 impl OneShotAsr {
-    pub fn start(config: crate::openai_audio::OpenAiAsrConfig, transcriber: Transcriber,
+    pub fn start(transcriber: Transcriber,
         callback: impl Fn(StreamingSpeechEvent) + Send + Sync + 'static) -> Self {
         let inner = Arc::new(Mutex::new(OneShotBuffer::default()));
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -92,12 +104,9 @@ impl OneShotAsr {
             };
             if worker_cancelled.load(Ordering::SeqCst) { return; }
             callback(StreamingSpeechEvent::Ready);
-            let result = match transcriber {
-                Transcriber::OpenAi => crate::openai_audio::transcribe(&config, &pcm).await,
-                Transcriber::Mimo => crate::mimo_tts::transcribe(&crate::mimo_tts::MimoAsrConfig {
-                    base_url: config.base_url, api_key: config.api_key, model: config.model,
-                    language: config.language,
-                }, &pcm).await,
+            let result = match &transcriber {
+                Transcriber::OpenAi(config) => crate::openai_audio::transcribe(config, &pcm).await,
+                Transcriber::Chat(config) => crate::mimo_tts::transcribe(config, &pcm).await,
             };
             let text = match result {
                 Ok(text) => text,
@@ -135,4 +144,18 @@ impl crate::speech::SpeechRecognizer for OneShotAsr {
     fn cancel(&self) { self.cancelled.store(true, Ordering::SeqCst); }
 
     fn generation(&self) -> u64 { self.generation }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashscope_asr_protocol_follows_model_name() {
+        // 二选一：qwen3-asr 系走 HTTP Chat 一次性，paraformer 系（含存量保存）走 WS 流式。
+        assert!(dashscope_asr_uses_chat("qwen3-asr-flash"));
+        assert!(dashscope_asr_uses_chat(" Qwen3-ASR-Flash "));
+        assert!(!dashscope_asr_uses_chat("paraformer-realtime-v2"));
+        assert!(!dashscope_asr_uses_chat(""));
+    }
 }

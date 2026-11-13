@@ -124,7 +124,7 @@ pub struct SpeechPreset {
 
 pub const SPEECH_PRESETS: &[SpeechPreset] = &[
     SpeechPreset { id: "volcengine", label: "豆包（火山引擎）", base_url: "", asr_model: "volc.seedasr.sauc.duration", tts_model: "seed-tts-2.0-standard", tts_voice: "" },
-    SpeechPreset { id: "dashscope", label: "通义千问（百炼）", base_url: "https://dashscope.aliyuncs.com", asr_model: "paraformer-realtime-v2", tts_model: "cosyvoice-v3-flash", tts_voice: "longxiaochun_v3" },
+    SpeechPreset { id: "dashscope", label: "通义千问（百炼）", base_url: "https://dashscope.aliyuncs.com", asr_model: "qwen3-asr-flash", tts_model: "cosyvoice-v3-flash", tts_voice: "longxiaochun_v3" },
     SpeechPreset { id: "mimo", label: "小米 MiMo", base_url: "https://api.xiaomimimo.com/v1", asr_model: "mimo-v2.5-asr", tts_model: "mimo-v2.5-tts", tts_voice: "" },
 ];
 pub const DEFAULT_SPEECH_PROVIDER: &str = "volcengine";

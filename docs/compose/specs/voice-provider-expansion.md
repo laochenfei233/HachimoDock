@@ -106,6 +106,10 @@ commits: 1586fec..a70662b
 
 初版评估判定「MiMo 无公开 ASR」有误——`mimo-v2.5-asr` 走与 TTS 同一 Chat Completions 端点的短语音识别（用户指正并核实 mimo.mi.com/docs）：整轮 PCM 加 WAV 头，以 `input_audio`（Base64 data URL，≤10MB，仅 wav/mp3）上传，`asr_options.language` 支持 auto/zh/en，转写文本在 `choices[].message.content`。实现复用一次性转写架构：`mimo_tts::transcribe` 适配器 + `asr_engine::Transcriber::Mimo` 路由（无流式 Partial，仅 Final），预设模型 `mimo-v2.5-asr`（可手填）。shortcut: 短语音一次性输出对 PTT 场景足够；需要边说边出字时再评估其流式接口。
 
+### S2.9 通义千问 ASR 协议二选一（交付后追加，2026-11-13）
+
+`qwen3-asr-flash` 的 OpenAI 兼容 HTTP 接口（compatible-mode `/chat/completions`，请求/响应形状与 MiMo ASR 完全一致）取代 WS 成为预设：`asr_engine` 按**模型名**分发协议——模型含 `qwen` 走 HTTP Chat 一次性（`Transcriber::Chat`，`compatible_mode: true` 拼 `/compatible-mode/v1` 前缀），否则（含存量保存的 `paraformer-realtime-v2`）继续走 WS 流式。二选一无新增配置项，保存的模型名即协议选择；设置页模型字段给出两种选择的说明。Rust 预设与前端 `ASR_PROVIDER_PRESETS` 默认改为 `qwen3-asr-flash`。
+
 ## [S3] Scope
 
 - In scope：

@@ -173,7 +173,7 @@ test("speech cards split recognition and synthesis with independent provider row
 test("speech provider presets supply per-service defaults", () => {
   assert.deepEqual(ASR_PROVIDER_PRESETS.map(({ id, label, model }) => ({ id, label, model })), [
     { id: "volcengine", label: "豆包", model: "volc.seedasr.sauc.duration" },
-    { id: "dashscope", label: "通义千问", model: "paraformer-realtime-v2" },
+    { id: "dashscope", label: "通义千问", model: "qwen3-asr-flash" },
     { id: "mimo", label: "MiMo", model: "mimo-v2.5-asr" },
     { id: "custom", label: "自定义", model: "" },
   ]);

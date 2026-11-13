@@ -591,7 +591,11 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
                 placeholder={ASR_PROVIDER_PRESETS.find((preset) => preset.id === speech.asrProvider)?.model || "填写服务商的识别模型"}
                 disabled={speech.asrPending || speech.loading}
               />
-              <span className="muted small">已按服务商填入默认模型，可改为账号已开通的模型。</span>
+              <span className="muted small">
+                {speech.asrProvider === "dashscope"
+                  ? "二选一：qwen3-asr-flash 走 HTTP 一次性识别（说完出全文）；paraformer-realtime-v2 走 WebSocket 流式（边说边出字幕）。"
+                  : "已按服务商填入默认模型，可改为账号已开通的模型。"}
+              </span>
             </label>
             <label className="ui-field" htmlFor="api-settings-asr-speech-key">
               <span className="ui-field__label">API Key</span>

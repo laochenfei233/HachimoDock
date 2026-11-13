@@ -54,7 +54,7 @@ export const ASR_RESOURCE_OPTIONS = [
 /** 语音识别服务商默认值（与 Rust `voice_chat_settings::SPEECH_PRESETS` 一致），模型可修改；MiMo 走 Chat Completions 短语音识别。 */
 export const ASR_PROVIDER_PRESETS = [
   { id: "volcengine", label: "豆包", model: "volc.seedasr.sauc.duration" },
-  { id: "dashscope", label: "通义千问", baseUrl: "https://dashscope.aliyuncs.com", model: "paraformer-realtime-v2" },
+  { id: "dashscope", label: "通义千问", baseUrl: "https://dashscope.aliyuncs.com", model: "qwen3-asr-flash" },
   { id: "mimo", label: "MiMo", baseUrl: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-asr" },
   { id: "custom", label: "自定义", model: "" },
 ];
