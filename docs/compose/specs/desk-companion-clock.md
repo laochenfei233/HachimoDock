@@ -12,6 +12,12 @@ commits: 1586fec (base)；分支仅含本 spec 文档提交，组件包交付于
 
 **What was built** — desk-companion-clock：host:true 的 composition v2 应用工具。纯黑背景（surface.background=0）上，左侧时钟簇居中显示 PC 本地时区的 HH:MM（分钟补零，96px/weight600 白色）、上方中文日期（YYYY年M月D日，灰）、下方天气与气温（Open-Meteo 宁波坐标，WMO 码映射中文天气文案 + 温度℃，灰）；右侧 200×200 桌宠 PNG（设备当前形象 builtin-terrier 西高地白梗的静态帧，扒桌沿姿势）。SW1 手动刷新天气（host.refresh→wx:refresh）。天气缺失/失败时天气行显示"等待数据"，时间日期不受影响。
 
+**Update (v5, 2026-11-14)** — 用户问"等待数据"原因并要求温度整数。诊断：API 本机 curl 直连正常
+（17.8℃），时间正常说明组合计划与 USB 快照链路活着，仅 wx json-get 处于取数失败/退避态
+（首次取数撞上 PC 开机网络未就绪是最可能场景，refresh_sec 1800 的退避把盲区放大到 30 分钟）。
+修复：refresh_sec→900；温度整数化走 wttr.in temp_C 整数字符串（混合双源，引擎不能算浮点是硬边界）。
+hash 825946ee590881a5（jobId 20261114T132236727707Z-9fd63bb3）。
+
 **Update (v4, 2026-11-13)** — 用户指定日期行格式 `M月D日 星期x`。clock 源无 weekday，新增 wd/wk
 computed 源实现 Sakamoto 算法（6 用例引擎验证全对，含闰年 2/29 与跨年分支）；cjk 图集去"年"加
 "星期一~六"（192×128），pet 缩 190×190 腾预算（97540/98304）。校验 OK + smoke CONTRACT_OK，
@@ -60,12 +66,17 @@ hash dee12e8a4dfaad56（jobId 20261113T085735113672Z-806e5ebb）。
   `https://api.open-meteo.com/v1/forecast?latitude=29.87&longitude=121.54&current=temperature_2m,weather_code&timezone=auto`，
   `hosts: ["api.open-meteo.com"]`，`refresh_sec: 1800`。
   城市宁波（29.87,121.54）——依据用户本机 component-data/city-radio 数据中"宁波"出现 28 次。
-- 4 个 computed 源（受限表达式 concat/str/if/lt/coalesce，DAG：w←wx，wxa/wxt←w，fmt←clock+wxa+wxt）：
-  - `w` = coalesce(weather_code, -999)
-  - `wxa` = WMO 码 if 链：<0 等待数据 / <1 晴 / <3 多云 / <4 阴 / <50 雾 / <71 雨 / <78 雪 / <83 阵雨 / <87 阵雪 / 否则 雷雨
-  - `wxt` = 等待态空串；否则 " " + str(coalesce(temperature_2m,"—")) + "℃"
-  - `fmt` = object{time, date, wx: wxa+wxt}；time = `str(hour) + ":" + (minute<10 ? "0" : "") + str(minute)`；date = `str(year) + "年" + str(month) + "月" + str(day) + "日"`
-  - fmt 不依赖 wx 的缺失字段失败（coalesce 保 fmt 健康，时间/日期不受天气影响）；等待态不出现"℃"尾巴。
+- 8 个源（v2 上限正好用满；v5 起混合双源，refresh_sec 900=Open-Meteo 官方 15 分钟数据节拍，
+  也把 PC 开机竞态下首次取数失败的最长盲区从 30 分钟压到 5 分钟）：
+  - `wx` json-get Open-Meteo（宁波 29.87,121.54，current=temperature_2m,weather_code）→ 天气文案
+  - `wt` json-get wttr.in/Ningbo?format=j1 → `current_condition/0/temp_C` 本身就是**整数字符串**（"18"/"-3"）
+  - `wxa` WMO 码 if 链（首分支内联 coalesce(-999)：等待数据 / 晴 / 多云 / 阴 / 雾 / 雨 / 雪 / 阵雨 / 阵雪 / 雷雨）
+  - `wxt` 温度段：wx 无码→""；wttr temp_C 缺失→""（隐藏，不显示 "晴 —℃"）；否则 " " + temp_C + "℃"
+  - `wd`/`wk` Sakamoto 星期（见下）；`fmt` = {time 补零, date: M月D日 星期x, wx: wxa+wxt}
+  - 降级矩阵（PC 同源 evaluate 验证）：双源挂→"等待数据"；仅 wttr 挂→"雨"（无温度）；仅 Open-Meteo 挂→"等待数据"；负温度→"雪 -3℃"
+  - 温度取整的设计依据：表达式引擎 `integer()` 拒绝浮点、`slice` 仅支持数组（读 app_expr.py 证实），
+    包内无法对 Open-Meteo 的 17.8 做任何运算/截断；绑定投影 float→int 也走 as_i64() 失败落 fallback。
+    因此整数温度必须由数据源直接提供——wttr.in temp_C 恰为整数字符串。
 - `wd`/`wk` computed 源（v4）：clock 无 weekday 字段，用受限表达式实现 Sakamoto 算法——
   wd = (y' + y'/4 − y'/100 + y'/400 + t[month−1] + day) mod 7（y' = year − (month<3)，t = array 12 项，
   get 按月取偏移）；wk = eq 链映射"星期日..星期六"。源数正好 8（v2 上限）；闰年/跨年分支经
