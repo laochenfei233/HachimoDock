@@ -131,6 +131,9 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
     llmTone: "muted",
     llmMessage: "正在读取对话大模型配置…",
   });
+  const [weather, setWeather] = useState({
+    loading: true, pending: false, qwKey: "", cyToken: "", qwHost: "", status: null, result: null,
+  });
   const llmDraft = JSON.stringify([voiceChat.llmProvider, voiceChat.llmBaseUrl, voiceChat.llmModel,
     voiceChat.llmWebSearch, voiceChat.llmApiKey]);
   useEffect(() => { if (!voiceChat.loading && savedLlm === null) setSavedLlm(llmDraft); }, [voiceChat.loading, savedLlm, llmDraft]);
@@ -280,6 +283,63 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    invoke("weather_key_status")
+      .then((status) => {
+        if (!cancelled) setWeather((current) => ({ ...current, loading: false, status }));
+      })
+      .catch((error) => {
+        if (!cancelled) setWeather((current) => ({
+          ...current, loading: false,
+          result: { tone: "error", message: `读取天气配置失败：${error}` },
+        }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveWeatherKeys = async () => {
+    if (weather.pending || weather.loading) return;
+    setWeather((current) => ({ ...current, pending: true, result: null }));
+    try {
+      const status = await invoke("save_weather_key", {
+        provider: "qweather", value: weather.qwKey, qweatherHost: weather.qwHost,
+      });
+      const finalStatus = weather.cyToken
+        ? await invoke("save_weather_key", { provider: "caiyun", value: weather.cyToken })
+        : status;
+      setWeather((current) => ({
+        ...current, pending: false, qwKey: "", cyToken: "", status: finalStatus,
+        result: { tone: "success", message: "天气配置已保存。" },
+      }));
+    } catch (error) {
+      setWeather((current) => ({
+        ...current, pending: false,
+        result: { tone: "error", message: `保存天气配置失败：${error}` },
+      }));
+    }
+  };
+
+  const clearWeatherKey = async (provider) => {
+    if (weather.pending || weather.loading) return;
+    setWeather((current) => ({ ...current, pending: true, result: null }));
+    try {
+      const status = await invoke("clear_weather_key", { provider });
+      setWeather((current) => ({
+        ...current, pending: false, status,
+        ...(provider === "qweather" ? { qwKey: "" } : { cyToken: "" }),
+        result: { tone: "success", message: "已清除该天气凭据。" },
+      }));
+    } catch (error) {
+      setWeather((current) => ({
+        ...current, pending: false,
+        result: { tone: "error", message: `清除失败：${error}` },
+      }));
+    }
+  };
 
   const configuredProviderCount = useMemo(
     () => VIDEO_PROVIDERS.filter((provider) =>
@@ -980,6 +1040,84 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
               </section>
             );
           })}
+        </div>
+      </Card>
+
+      <Card
+        title="天气数据源"
+        subtitle="桌搭子时钟等组件的天气与气温。Key 只保存在这台电脑的系统凭据库，不进入组件包。"
+        actions={(
+          <span className={`api-settings__status${weather.status?.qweather?.configured || weather.status?.caiyun ? " is-success" : ""}`}>
+            {weather.loading ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
+            {weather.loading
+              ? "读取中"
+              : weather.status?.qweather?.configured || weather.status?.caiyun ? "已配置" : "未配置"}
+          </span>
+        )}
+      >
+        <div className="api-settings__form">
+          <label className="ui-field" htmlFor="api-settings-qweather-key">
+            <span className="ui-field__label">和风天气 API Key</span>
+            <input
+              id="api-settings-qweather-key"
+              type="password"
+              className="ui-control api-settings__secret-input"
+              value={weather.qwKey}
+              onChange={(event) => setWeather((current) => ({ ...current, qwKey: event.target.value }))}
+              placeholder={weather.status?.qweather?.configured ? "已配置，留空保持不变" : "在 console.qweather.com 创建"}
+              disabled={weather.pending || weather.loading}
+              autoComplete="off"
+            />
+          </label>
+          <label className="ui-field" htmlFor="api-settings-qweather-host">
+            <span className="ui-field__label">和风 API Host</span>
+            <input
+              id="api-settings-qweather-host"
+              className="ui-control"
+              value={weather.qwHost}
+              onChange={(event) => setWeather((current) => ({ ...current, qwHost: event.target.value }))}
+              placeholder={weather.status?.qweather?.host || "devapi.qweather.com（新账号使用控制台专属域名）"}
+              disabled={weather.pending || weather.loading}
+              autoComplete="off"
+            />
+          </label>
+          <label className="ui-field" htmlFor="api-settings-caiyun-token">
+            <span className="ui-field__label">彩云天气 Token</span>
+            <input
+              id="api-settings-caiyun-token"
+              type="password"
+              className="ui-control api-settings__secret-input"
+              value={weather.cyToken}
+              onChange={(event) => setWeather((current) => ({ ...current, cyToken: event.target.value }))}
+              placeholder={weather.status?.caiyun ? "已配置，留空保持不变" : "在 dashboard.caiyunapp.com 申请"}
+              disabled={weather.pending || weather.loading}
+              autoComplete="off"
+            />
+          </label>
+          <div className="api-settings__save-row">
+            <button type="button" className="btn-primary btn-sm api-settings__save"
+              onClick={saveWeatherKeys} disabled={weather.pending || weather.loading}>
+              {weather.pending ? "保存中…" : "保存天气配置"}
+            </button>
+            {weather.status?.qweather?.configured && (
+              <button type="button" className="btn-secondary btn-sm"
+                onClick={() => clearWeatherKey("qweather")} disabled={weather.pending}>
+                清除和风 Key
+              </button>
+            )}
+            {weather.status?.caiyun && (
+              <button type="button" className="btn-secondary btn-sm"
+                onClick={() => clearWeatherKey("caiyun")} disabled={weather.pending}>
+                清除彩云 Token
+              </button>
+            )}
+          </div>
+          {weather.result && (
+            <div className={`api-settings__result${resultToneClass(weather.result.tone)}`} role="status">
+              {weather.result.tone === "error" ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
+              {weather.result.message}
+            </div>
+          )}
         </div>
       </Card>
     </PageShell>

@@ -11,6 +11,7 @@ OPERATIONS = {'constant': set(), 'clock': set(), 'counter': {'increment', 'decre
               'timer': {'start', 'pause', 'reset'}, 'json-get': {'refresh'},
               'ledger': {'append','remove_latest','previous','next'},'computed':set(),'document':{'set','append','remove'},
               'workflow': {'start', 'resume', 'cancel'},
+              'qweather': {'refresh'}, 'caiyun': {'refresh'},
               'collection': {'page_next','page_previous','up','down','clear_selection'} | {'row_'+str(i) for i in range(8)}}
 
 def name(value, limit):
@@ -120,11 +121,11 @@ def composition_errors(value, runtime):
             assert name(alias, 16) and isinstance(source, dict)
             assert v2 or any(b.get('source') == alias for b in bindings.values()) or any(isinstance(a, str) and a.split(':')[0] == alias for a in value['actions'].values())
             kind = source['kind']; assert kind in OPERATIONS
-            assert v2 or kind not in ('computed','document','collection')
+            assert v2 or kind not in ('computed','document','collection','qweather','caiyun')
             assert v3 or kind != 'workflow'
             fields = {'kind'} | {'constant': {'value'}, 'clock': set(), 'counter': {'initial', 'min', 'max', 'step'},
                                  'timer': {'seconds'}, 'json-get': {'endpoint', 'hosts', 'refresh_sec'},
-                                 'ledger': {'unit','target','capacity','label'},'computed':{'expression'},'document':{'initial'},'workflow':{'workflow'},'collection':{'expression','view'}}[kind]
+                                 'ledger': {'unit','target','capacity','label'},'computed':{'expression'},'document':{'initial'},'workflow':{'workflow'},'collection':{'expression','view'},'qweather':{'lat','lon','refresh_sec'},'caiyun':{'lat','lon','refresh_sec'}}[kind]
             assert set(source) == fields
             if kind == 'constant':
                 assert len(json.dumps(source['value'], ensure_ascii=False, separators=(',', ':')).encode()) <= 4096
@@ -156,6 +157,10 @@ def composition_errors(value, runtime):
             elif kind == 'json-get':
                 public_get(source['endpoint'], source['hosts'])
                 assert type(source['refresh_sec']) is int and 30 <= source['refresh_sec'] <= 86400
+            elif kind in ('qweather','caiyun'):
+                assert all(type(source[k]) in (int, float) and not isinstance(source[k], bool) for k in ('lat', 'lon'))
+                assert -90 <= source['lat'] <= 90 and -180 <= source['lon'] <= 180
+                assert type(source['refresh_sec']) is int and 900 <= source['refresh_sec'] <= 86400
         remaining={alias:dependencies.get(alias,set()) for alias in sources};done=set()
         while remaining:
             ready=next((alias for alias,deps in remaining.items() if deps<=done),None)

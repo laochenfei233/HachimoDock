@@ -83,6 +83,7 @@ mod component_calendar;
 mod component_news;
 mod knowledge_narration;
 mod app_weather;
+mod weather_keys;
 mod shared_location;
 mod location_profile;
 mod component_app;
@@ -11910,6 +11911,7 @@ pub fn run() {
             stock_quotes::start(usb_for_auto.clone());
             todos::configure(app.path().app_data_dir()?);
             auth_provider::configure(app.path().app_data_dir()?);
+            weather_keys::configure(app.path().app_data_dir()?);
             shared_location::configure(app.path().app_local_data_dir()?);
             local_widget_data::start(usb_for_auto.clone());
             music_player::configure(app.path().app_data_dir()?,usb_for_auto.clone());
@@ -11974,6 +11976,8 @@ pub fn run() {
             shared_location::shared_location_suggest,
             shared_location::shared_location_configure,
             auth_provider::auth_provider_status,
+            weather_keys::weather_key_status,
+            weather_keys::save_weather_key,
             auth_provider::auth_provider_configure,
             auth_provider::auth_provider_begin,
             auth_provider::auth_provider_poll,

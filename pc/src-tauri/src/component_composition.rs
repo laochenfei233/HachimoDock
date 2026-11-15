@@ -117,6 +117,25 @@ enum Source {
         hosts: Vec<String>,
         refresh_sec: u32,
     },
+    #[serde(rename = "qweather")]
+    QWeather {
+        lat: f64,
+        lon: f64,
+        refresh_sec: u32,
+    },
+    Caiyun {
+        lat: f64,
+        lon: f64,
+        refresh_sec: u32,
+    },
+}
+
+/// PC-built weather providers: endpoints and credentials live on this PC
+/// (settings + OS credential store); packages only declare kind and location.
+#[derive(Clone)]
+enum ProviderJob {
+    QWeather { lat: f64, lon: f64 },
+    Caiyun { lat: f64, lon: f64 },
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -209,6 +228,7 @@ fn operations(source: &Source) -> &'static [&'static str] {
         Source::Timer { .. } => &["start", "pause", "reset"],
         Source::Ledger { .. } => &["append", "remove_latest", "previous", "next"],
         Source::JsonGet { .. } => &["refresh"],
+        Source::QWeather { .. } | Source::Caiyun { .. } => &["refresh"],
         Source::Document { .. } => &["set", "append", "remove"],
         Source::Collection { .. } => crate::component_collection::OPERATIONS,
         Source::Workflow { .. } => &["start", "resume", "cancel"],
@@ -252,7 +272,7 @@ pub fn validate(d: &Declaration, r: &Value) -> Result<(), String> {
         && (d.content[0].get("workflows").is_some()
             || p.sources
                 .values()
-                .any(|s| matches!(s, Source::Computed { .. } | Source::Document { .. } | Source::Collection { .. })))
+                .any(|s| matches!(s, Source::Computed { .. } | Source::Document { .. } | Source::Collection { .. } | Source::QWeather { .. } | Source::Caiyun { .. })))
     {
         return Err("规则、文档与流程需要显式使用组合 v2".into());
     }
@@ -363,6 +383,16 @@ pub fn validate(d: &Declaration, r: &Value) -> Result<(), String> {
                         ]
                         .contains(&k.to_ascii_lowercase().as_str())
                     })
+                {
+                    return Err(bad());
+                }
+            }
+            Source::QWeather { lat, lon, refresh_sec } | Source::Caiyun { lat, lon, refresh_sec } => {
+                if !lat.is_finite()
+                    || !lon.is_finite()
+                    || lat.abs() > 90.0
+                    || lon.abs() > 180.0
+                    || !(900..=86400).contains(refresh_sec)
                 {
                     return Err(bad());
                 }
@@ -747,12 +777,11 @@ pub fn permissions(d: &Declaration) -> Value {
         .map(|p| {
             p.sources
                 .values()
-                .filter_map(|s| {
-                    if let Source::JsonGet { hosts, .. } = s {
-                        Some(hosts.clone())
-                    } else {
-                        None
-                    }
+                .filter_map(|s| match s {
+                    Source::JsonGet { hosts, .. } => Some(hosts.clone()),
+                    Source::QWeather { .. } => Some(vec![crate::weather_keys::qweather_host()]),
+                    Source::Caiyun { .. } => Some(vec!["api.caiyunapp.com".to_string()]),
+                    _ => None,
                 })
                 .flatten()
                 .chain(
@@ -780,6 +809,7 @@ struct Cached {
     owner: String,
     value: Value,
     error: bool,
+    error_message: String,
     pending: bool,
     last: u64,
     generation: u64,
@@ -792,22 +822,44 @@ struct Job {
     hosts: Vec<String>,
     generation: u64,
     workflow: Option<WorkflowJob>,
+    provider: Option<ProviderJob>,
 }
 struct Network {
     cache: Arc<Mutex<BTreeMap<String, Cached>>>,
     tx: mpsc::SyncSender<Job>,
 }
 fn finish(cache: &mut BTreeMap<String, Cached>, job: &Job, result: Result<Value, String>) {
-    if !job.resources.is_current() { return; }
-    if let Some(v) = cache
-        .get_mut(&job.key)
-        .filter(|v| v.owner == job.owner && v.generation == job.generation)
-    {
+    let revoked = {
+        let Some(v) = cache
+            .get_mut(&job.key)
+            .filter(|v| v.owner == job.owner && v.generation == job.generation)
+        else {
+            return;
+        };
         v.pending = false;
-        v.error = result.is_err();
-        if let Ok(value) = result {
-            v.value = value;
+        if job.resources.is_current() {
+            match result {
+                Ok(value) => {
+                    v.value = value;
+                    v.error = false;
+                    v.error_message.clear();
+                }
+                Err(message) => {
+                    v.error = true;
+                    v.error_message = message;
+                }
+            }
+            false
+        } else {
+            true
         }
+    };
+    if revoked {
+        // The component was disabled, replaced, or evicted while this GET was in
+        // flight. Clearing only `pending` here would leave the source reporting
+        // `preparing` with a null value forever, so drop the entry: the next
+        // request re-queues a fresh bounded fetch instead of showing stale data.
+        cache.remove(&job.key);
     }
 }
 fn with_public_network(resources: &ResourceOwner, fetch: impl FnOnce() -> Result<Value, String>) -> Result<Value, String> {
@@ -845,8 +897,9 @@ fn network() -> &'static Network {
                     }) {
                         continue;
                     }
-                    let result = with_public_network(&job.resources, || {
-                        crate::media_network::scoped_json_https(&job.endpoint, &job.hosts, 65536)
+                    let result = with_public_network(&job.resources, || match &job.provider {
+                        Some(provider) => provider_fetch(provider),
+                        None => crate::media_network::scoped_json_https(&job.endpoint, &job.hosts, 65536),
                     });
                     finish(&mut cache.lock().unwrap(), &job, result);
                 })
@@ -855,14 +908,148 @@ fn network() -> &'static Network {
         Network { cache, tx }
     })
 }
+fn provider_fetch(job: &ProviderJob) -> Result<Value, String> {
+    match job {
+        ProviderJob::QWeather { lat, lon } => qweather_now(*lat, *lon),
+        ProviderJob::Caiyun { lat, lon } => caiyun_realtime(*lat, *lon),
+    }
+}
+fn weather_get(url: &str, host: &str) -> Result<Value, String> {
+    use std::io::Read as _;
+    let addresses = crate::media_dns::resolve(host, 443)?;
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .resolve_to_addrs(host, &addresses)
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("HachimoDock/1.0 https://github.com/YizhengWw/HachimoDock")
+        .gzip(true)
+        .build()
+        .map_err(|_| "网络初始化失败".to_string())?;
+    let mut body = Vec::new();
+    client
+        .get(url)
+        .send()
+        .and_then(|response| response.error_for_status())
+        .map_err(|_| "天气数据请求失败".to_string())?
+        .take(65536 + 1)
+        .read_to_end(&mut body)
+        .map_err(|_| "天气数据接收中断".to_string())?;
+    if body.len() > 65536 {
+        return Err("天气数据超过安全上限".into());
+    }
+    serde_json::from_slice(&body).map_err(|_| "天气数据格式无效".into())
+}
+fn qweather_url(host: &str, lat: f64, lon: f64, key: &str) -> String {
+    format!("https://{host}/v7/weather/now?location={lon:.2},{lat:.2}&key={key}&lang=zh")
+}
+fn qweather_now(lat: f64, lon: f64) -> Result<Value, String> {
+    let key = crate::weather_keys::load_key(crate::weather_keys::QWEATHER)?
+        .ok_or("和风天气 Key 未配置，请在设置中填写")?;
+    let host = crate::weather_keys::qweather_host();
+    let data = weather_get(&qweather_url(&host, lat, lon, &key), &host)?;
+    if data.pointer("/code").and_then(Value::as_str) != Some("200") {
+        return Err("和风天气请求失败".into());
+    }
+    let text = data
+        .pointer("/now/text")
+        .and_then(Value::as_str)
+        .ok_or("和风天气缺少天气现象")?;
+    let temp = data
+        .pointer("/now/temp")
+        .and_then(Value::as_str)
+        .ok_or("和风天气缺少温度")?;
+    if text.len() > 32
+        || text.is_empty()
+        || temp.is_empty()
+        || temp.len() > 8
+        || !temp.bytes().all(|b| b.is_ascii_digit() || b == b'-')
+    {
+        return Err("和风天气数据超出范围".into());
+    }
+    Ok(json!({"text": normalize_qweather_text(text), "temp": temp}))
+}
+fn caiyun_url(token: &str, lat: f64, lon: f64) -> String {
+    format!("https://api.caiyunapp.com/v2.6/{token}/{lon:.2},{lat:.2}/realtime.json")
+}
+fn caiyun_realtime(lat: f64, lon: f64) -> Result<Value, String> {
+    let token = crate::weather_keys::load_key(crate::weather_keys::CAIYUN)?
+        .ok_or("彩云天气 Token 未配置，请在设置中填写")?;
+    let host = "api.caiyunapp.com";
+    let data = weather_get(&caiyun_url(&token, lat, lon), host)?;
+    if data.pointer("/status").and_then(Value::as_str) != Some("ok")
+        || data.pointer("/result/realtime/status").and_then(Value::as_str) != Some("ok")
+    {
+        return Err("彩云天气请求失败".into());
+    }
+    let temperature = data
+        .pointer("/result/realtime/temperature")
+        .and_then(Value::as_f64)
+        .filter(|t| t.is_finite() && (-100.0..=70.0).contains(t))
+        .ok_or("彩云天气温度超出范围")?;
+    let skycon = data
+        .pointer("/result/realtime/skycon")
+        .and_then(Value::as_str)
+        .ok_or("彩云天气缺少天气现象")?;
+    Ok(json!({
+        "text": caiyun_text(skycon).ok_or("彩云天气现象未知")?,
+        "temp": format!("{}", temperature.round() as i64),
+    }))
+}
+/// QWeather condition texts outside the widget glyph vocabulary fold to their
+/// base condition; unknown texts pass through (device falls back per glyph).
+fn normalize_qweather_text(text: &str) -> String {
+    match text {
+        "大暴雨" | "特大暴雨" => "暴雨".into(),
+        "雷阵雨伴有冰雹" | "雷阵雨并伴有冰雹" => "雷阵雨".into(),
+        "浓雾" | "强浓雾" | "大雾" => "雾".into(),
+        "扬沙" | "沙尘暴" | "强沙尘暴" => "沙尘".into(),
+        "冻雨" => "雨".into(),
+        other => other.to_string(),
+    }
+}
+fn caiyun_text(skycon: &str) -> Option<&'static str> {
+    Some(match skycon {
+        "CLEAR_DAY" | "CLEAR_NIGHT" => "晴",
+        "PARTLY_CLOUDY_DAY" | "PARTLY_CLOUDY_NIGHT" => "多云",
+        "CLOUDY" => "阴",
+        "LIGHT_HAZE" | "MODERATE_HAZE" | "HEAVY_HAZE" => "霾",
+        "LIGHT_RAIN" => "小雨",
+        "MODERATE_RAIN" => "中雨",
+        "HEAVY_RAIN" => "大雨",
+        "STORM_RAIN" => "暴雨",
+        "FOG" => "雾",
+        "LIGHT_SNOW" => "小雪",
+        "MODERATE_SNOW" => "中雪",
+        "HEAVY_SNOW" => "大雪",
+        "STORM_SNOW" => "暴雪",
+        "DUST" | "SAND" => "沙尘",
+        "WIND" => "大风",
+        "THUNDER_SHOWER" => "雷阵雨",
+        _ => return None,
+    })
+}
 fn fetched(
     id: &str,
     alias: &str,
     source: &Source,
     now: u64,
     refresh: bool,
-) -> (Value, &'static str) {
+) -> (Value, &'static str, Option<String>) {
     cached(network(), id, alias, source, now, refresh)
+}
+/// Manual refresh retries within 15s. A failed automatic fetch retries soon too:
+/// a network hiccup at startup must not blank the face for the whole interval.
+const FAILED_RETRY_SECS: u64 = 20;
+fn retry_delay(refresh: bool, refresh_sec: u32, failed: bool) -> u64 {
+    if refresh {
+        15
+    } else if failed {
+        FAILED_RETRY_SECS
+    } else {
+        refresh_sec as u64
+    }
 }
 fn cached(
     pool: &Network,
@@ -871,14 +1058,40 @@ fn cached(
     source: &Source,
     now: u64,
     refresh: bool,
-) -> (Value, &'static str) {
-    let Source::JsonGet {
-        endpoint,
-        hosts,
-        refresh_sec,
-    } = source
-    else {
-        return (Value::Null, "error");
+) -> (Value, &'static str, Option<String>) {
+    let (endpoint, hosts, refresh_sec, provider) = match source {
+        Source::JsonGet {
+            endpoint,
+            hosts,
+            refresh_sec,
+        } => (endpoint.clone(), hosts.clone(), *refresh_sec, None),
+        Source::QWeather {
+            lat,
+            lon,
+            refresh_sec,
+        } => (
+            String::new(),
+            Vec::new(),
+            *refresh_sec,
+            Some(ProviderJob::QWeather {
+                lat: *lat,
+                lon: *lon,
+            }),
+        ),
+        Source::Caiyun {
+            lat,
+            lon,
+            refresh_sec,
+        } => (
+            String::new(),
+            Vec::new(),
+            *refresh_sec,
+            Some(ProviderJob::Caiyun {
+                lat: *lat,
+                lon: *lon,
+            }),
+        ),
+        _ => return (Value::Null, "error", None),
     };
     let key = format!(
         "{id}:{alias}:{:x}",
@@ -894,14 +1107,14 @@ fn cached(
         {
             if let Some(retired) = cache.remove(&old) { retired.resources.cancel(); }
         } else {
-            return (Value::Null, "busy");
+            return (Value::Null, "busy", None);
         }
     }
     let value = cache.entry(key.clone()).or_insert_with(|| Cached {
         owner: id.into(),
         ..Default::default()
     });
-    let delay = if refresh { 15 } else { *refresh_sec as u64 };
+    let delay = retry_delay(refresh, refresh_sec, value.error);
     if !value.pending && (value.last == 0 || now.saturating_sub(value.last) >= delay) {
         static GENERATION: AtomicU64 = AtomicU64::new(1);
         value.generation = GENERATION.fetch_add(1, Ordering::Relaxed);
@@ -913,10 +1126,11 @@ fn cached(
                 resources: value.resources.clone(),
                 key,
                 owner: id.into(),
-                endpoint: endpoint.clone(),
-                hosts: hosts.clone(),
+                endpoint,
+                hosts,
                 generation: value.generation,
                 workflow: None,
+                provider,
             })
             .is_err()
         {
@@ -924,6 +1138,7 @@ fn cached(
             value.error = true;
         }
     }
+    let error = (value.error && !value.error_message.is_empty()).then(|| value.error_message.clone());
     (
         value.value.clone(),
         if value.pending {
@@ -933,6 +1148,7 @@ fn cached(
         } else {
             "ready"
         },
+        error,
     )
 }
 // A process-wide revision fences requests resolved before any successful formal
@@ -1148,6 +1364,7 @@ fn enqueue_workflow(job: WorkflowJob) -> bool {
             hosts: vec![],
             generation: 0,
             workflow: Some(job),
+            provider: None,
         })
         .is_err()
     {
@@ -1232,7 +1449,7 @@ fn workflow_sources(
     let known = p.sources.keys().cloned().collect();
     for alias in source_order(p)? {
         let value = match &p.sources[&alias] {
-            Source::JsonGet { .. } => Value::Null,
+            Source::JsonGet { .. } | Source::QWeather { .. } | Source::Caiyun { .. } => Value::Null,
             Source::Computed { expression } => crate::component_expr::eval(
                 expression,
                 &json!({"sources":values,"event":event}),
@@ -1627,6 +1844,7 @@ fn source_value(
             )
         }
         Source::JsonGet { .. } => Err("网络源由有界后台执行器处理".into()),
+        Source::QWeather { .. } | Source::Caiyun { .. } => Err("网络源由有界后台执行器处理".into()),
         Source::Ledger {
             unit,
             target,
@@ -1685,17 +1903,21 @@ fn snapshot_sources(
     now: i64,
     selected: Option<(&str, &str)>,
     event: &Value,
-) -> Result<(BTreeMap<String, Value>, BTreeMap<String, &'static str>), String> {
+) -> Result<(BTreeMap<String, Value>, BTreeMap<String, &'static str>, BTreeMap<String, String>), String> {
     let known = p.sources.keys().cloned().collect();
     let mut values = BTreeMap::new();
     let mut status = BTreeMap::new();
+    let mut errors = BTreeMap::new();
     for alias in source_order(p)? {
         let source = &p.sources[&alias];
         let op = selected.filter(|(a, _)| *a == alias).map(|(_, op)| op);
-        if matches!(source, Source::JsonGet { .. }) {
+        if matches!(source, Source::JsonGet { .. } | Source::QWeather { .. } | Source::Caiyun { .. }) {
             let pool = network();
             let _ = NETWORK_ACCESS.set(pool);
-            let (v, phase) = fetched(id, &alias, source, network_now(), op == Some("refresh"));
+            let (v, phase, error) = fetched(id, &alias, source, network_now(), op == Some("refresh"));
+            if let Some(error) = error {
+                errors.insert(alias.clone(), error);
+            }
             values.insert(alias.clone(), v);
             status.insert(alias, phase);
             continue;
@@ -1723,7 +1945,7 @@ fn snapshot_sources(
             }
         }
     }
-    Ok((values, status))
+    Ok((values, status, errors))
 }
 pub fn request(
     id: &str,
@@ -1959,7 +2181,7 @@ fn request_with_dispatch(
     if let Some(("flow", flow)) = effective {
         let known = p.sources.keys().cloned().collect();
         for step in &p.workflows[flow] {
-            let (values, _) = snapshot_sources(id, &p, &mut state, now, None, &event)?;
+            let (values, _, _) = snapshot_sources(id, &p, &mut state, now, None, &event)?;
             let ctx = json!({"sources":values,"event":event});
             if let Some(condition) = &step.when {
                 let allowed = crate::component_expr::eval(condition, &ctx, &known)?
@@ -1997,7 +2219,7 @@ fn request_with_dispatch(
             trace.push(json!({"target":step.target,"phase":"applied"}));
         }
     }
-    let (sources, status) = snapshot_sources(
+    let (sources, status, source_errors) = snapshot_sources(
         id,
         &p,
         &mut state,
@@ -2122,7 +2344,10 @@ fn request_with_dispatch(
                 }
                 let ready = status.get(alias) != Some(&"error")
                     || op == "reset"
-                    || matches!(p.sources[alias], Source::JsonGet { .. });
+                    || matches!(
+                        p.sources[alias],
+                        Source::JsonGet { .. } | Source::QWeather { .. } | Source::Caiyun { .. }
+                    );
                 if let (
                     Source::Ledger {
                         unit,
@@ -2153,6 +2378,29 @@ fn request_with_dispatch(
         .map(|(action, _)| action)
         .collect();
     let mut response=json!({"enabled":true,"service":"composition","variables":variables,"values":values,"ui":{"mode":0,"actions":actions,"context":context(&state)},"permissions":permissions(d),"sources":status,"bindingErrors":errors,"workflowSteps":trace,"workflows":state.runs.iter().map(|(name, run)| (name.clone(),json!({"state":workflow_value(Some(run)),"steps":run.steps}))).collect::<BTreeMap<_,_>>(),"duplicate":duplicate});
+    // Diagnostics only when a source actually failed: the reason never reaches the
+    // device (bounded strings, no URLs or credentials), but it makes a stuck
+    // weather source debuggable instead of silently reporting `error`.
+    if !source_errors.is_empty() {
+        response["sourceErrors"] = json!(source_errors);
+    }
+    // The device only sees the fallback text, so persist the reason where the
+    // user (and support) can read it. Rewritten only when it changes.
+    let diagnostic = dir.join("source-errors.txt");
+    let text: String = source_errors
+        .iter()
+        .map(|(alias, message)| format!("{alias}: {message}"))
+        .collect::<Vec<_>>()
+        .join("
+");
+    let existing = std::fs::read_to_string(&diagnostic).ok();
+    if text.is_empty() {
+        if existing.is_some() {
+            let _ = std::fs::remove_file(&diagnostic);
+        }
+    } else if existing.as_deref() != Some(text.as_str()) {
+        let _ = std::fs::write(&diagnostic, text);
+    }
     if let Some(collection)=r["surface"].get("collection_view"){
         let config=crate::app_host_collection::Config::parse(collection)?;
         if status.get(&config.source)==Some(&"ready") {
@@ -3020,6 +3268,43 @@ mod tests {
         assert!(crate::app_services::parse(&serde_json::to_vec(&old).unwrap(),&r).is_err());
     }
     #[test]
+    fn weather_provider_sources_parse_reject_and_normalize() {
+        let suite: Value = serde_json::from_str(include_str!(
+            "../../skills/petui/contracts/weather-providers-v1.json"
+        ))
+        .unwrap();
+        let r = &suite["runtime"];
+        let good = &suite["declaration"];
+        assert!(crate::app_services::parse(&serde_json::to_vec(good).unwrap(), r).is_ok());
+        for c in suite["rejections"].as_array().unwrap() {
+            let mut bad = good.clone();
+            let (parent, key) = c["pointer"].as_str().unwrap().rsplit_once('/').unwrap();
+            bad.pointer_mut(parent).unwrap()[key] = c["value"].clone();
+            assert!(
+                crate::app_services::parse(&serde_json::to_vec(&bad).unwrap(), r).is_err(),
+                "{c}"
+            );
+        }
+        assert_eq!(normalize_qweather_text("大暴雨"), "暴雨");
+        assert_eq!(normalize_qweather_text("特大暴雨"), "暴雨");
+        assert_eq!(normalize_qweather_text("雷阵雨伴有冰雹"), "雷阵雨");
+        assert_eq!(normalize_qweather_text("扬沙"), "沙尘");
+        assert_eq!(normalize_qweather_text("多云"), "多云");
+        assert_eq!(normalize_qweather_text("强对流"), "强对流");
+        assert_eq!(caiyun_text("CLEAR_NIGHT"), Some("晴"));
+        assert_eq!(caiyun_text("THUNDER_SHOWER"), Some("雷阵雨"));
+        assert_eq!(caiyun_text("WIND"), Some("大风"));
+        assert_eq!(caiyun_text("MYSTERY"), None);
+        assert_eq!(
+            qweather_url("devapi.qweather.com", 29.87, 121.54, "k"),
+            "https://devapi.qweather.com/v7/weather/now?location=121.54,29.87&key=k&lang=zh"
+        );
+        assert_eq!(
+            caiyun_url("t", 29.87, 121.54),
+            "https://api.caiyunapp.com/v2.6/t/121.54,29.87/realtime.json"
+        );
+    }
+    #[test]
     fn v2_contract_rejects_cycles_bad_steps_and_missing_context() {
         let suite: Value = serde_json::from_str(include_str!(
             "../../skills/petui/contracts/composition-v2.json"
@@ -3313,7 +3598,7 @@ mod tests {
         );
         assert_eq!(
             cached(&pool, "alpha", "public", &source, 110, false),
-            (json!({"value":42}), "ready")
+            (json!({"value":42}), "ready", None)
         );
         cached(&pool, "alpha", "public", &source, 115, true);
         let failed = rx.try_recv().unwrap();
@@ -3324,7 +3609,7 @@ mod tests {
         );
         assert_eq!(
             cached(&pool, "alpha", "public", &source, 116, false),
-            (json!({"value":42}), "error")
+            (json!({"value":42}), "error", Some("unavailable".to_string()))
         );
         pool.cache.lock().unwrap().clear();
         cached(&pool, "alpha", "public", &source, 117, false);
@@ -3336,7 +3621,7 @@ mod tests {
         );
         assert_eq!(
             cached(&pool, "alpha", "public", &source, 118, false),
-            (Value::Null, "preparing")
+            (Value::Null, "preparing", None)
         );
         finish(
             &mut pool.cache.lock().unwrap(),

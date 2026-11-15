@@ -1,0 +1,119 @@
+{
+ "runtime": {
+  "schema_version": 1,
+  "engine": "p4-bounded-runtime-v4",
+  "host": true,
+  "host_context": "p4-host-context-v1",
+  "input": {
+   "engine": "p4-input-v1"
+  },
+  "vars": {
+   "wxStr": {
+    "type": "string",
+    "init": "等待数据"
+   }
+  },
+  "states": [
+   "ready"
+  ],
+  "initial_state": "ready",
+  "tick": [],
+  "transitions": [
+   {
+    "from": "*",
+    "on": "host.refresh"
+   }
+  ],
+  "dashboard": {
+   "title": "Weather providers"
+  },
+  "surface": {
+   "engine": "p4-app-surface-v1",
+   "graphics": "p4-app-graphics-v1",
+   "bindings": "p4-variable-bindings-v1",
+   "background": 0,
+   "elements": [
+    {
+     "type": "text",
+     "x": 20,
+     "y": 20,
+     "w": 300,
+     "h": 48,
+     "color": 65535,
+     "var_bind": "wxStr"
+    }
+   ]
+  }
+ },
+ "declaration": {
+  "schemaVersion": 1,
+  "engine": "pc-app-composition-v2",
+  "service": "composition",
+  "actions": {
+   "host.refresh": "wx:refresh"
+  },
+  "content": [
+   {
+    "sources": {
+     "wx": {
+      "kind": "qweather",
+      "lat": 29.87,
+      "lon": 121.54,
+      "refresh_sec": 900
+     },
+     "cy": {
+      "kind": "caiyun",
+      "lat": 29.87,
+      "lon": 121.54,
+      "refresh_sec": 900
+     }
+    },
+    "bindings": {
+     "wxStr": {
+      "source": "wx",
+      "pointer": "/text",
+      "fallback": "等待数据"
+     }
+    }
+   }
+  ]
+ },
+ "rejections": [
+  {
+   "pointer": "/content/0/sources/wx/lat",
+   "value": 95
+  },
+  {
+   "pointer": "/content/0/sources/wx/lat",
+   "value": -91
+  },
+  {
+   "pointer": "/content/0/sources/wx/lon",
+   "value": 200
+  },
+  {
+   "pointer": "/content/0/sources/wx/refresh_sec",
+   "value": 300
+  },
+  {
+   "pointer": "/content/0/sources/wx/refresh_sec",
+   "value": 100000
+  },
+  {
+   "pointer": "/content/0/sources/wx/endpoint",
+   "value": "https://devapi.qweather.com/v7/weather/now"
+  },
+  {
+   "pointer": "/content/0/sources/wx/key",
+   "value": "leaked-key"
+  },
+  {
+   "pointer": "/content/0/sources/cy/refresh_sec",
+   "value": 899
+  },
+  {
+   "pointer": "/engine",
+   "value": "pc-app-composition-v1"
+  }
+ ]
+}
