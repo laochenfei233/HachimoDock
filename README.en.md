@@ -1,22 +1,20 @@
 # HachimoDock
 
-[简体中文](README.md) · [Downloads](https://github.com/YizhengWw/HachimoDock/releases/latest) · [Issues](https://github.com/YizhengWw/HachimoDock/issues)
+[简体中文](README.md) · [Downloads](https://github.com/ai-maker-lab/HachimoDock/releases/latest) · [Issues](https://github.com/YizhengWw/HachimoDock/issues)
 
 HachimoDock is a desktop interface for AI Agents. A Windows/macOS manager and an ESP32-P4 display provide task-state animations, conversation bubbles, voice input, custom appearances and interactive components. The installed desktop app is named **HachimiDock**; some developer documentation calls it **Pet Manager**.
 
 ## Versions and downloads
 
-| Component | Current release | Platform |
+| Component | Version | Download |
 | --- | --- | --- |
-| Desktop client | **0.1.201** | Apple silicon macOS / Windows x64 |
-| Device firmware | **0.7.103-p4-r181** | ESP32-P4 v1 and v3 OTA images included in the desktop installers |
-| Current source | Client 0.1.201 / firmware R181 version identifiers | `main` may contain post-release changes |
+| Windows x64 | **0.1.232** | [Download installer](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/HachimiDock_0.1.232_Windows-x64-setup.exe) |
+| macOS (Apple silicon) | **0.1.232** | [Download installer](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/HachimiDock_0.1.232_macOS-arm64.dmg) |
+| Device firmware | **0.7.103-p4-r272 / R273** | [WiFi6 and Pico factory flashing kits](https://github.com/ai-maker-lab/HachimoDock/releases/tag/v0.1.232#设备固件) |
 
-[Download Mac 0.1.201 (Apple silicon)](https://github.com/YizhengWw/HachimoDock/releases/download/v0.1.201/HachimiDock_0.1.201_macOS-arm64.dmg) · [Download Windows 0.1.201 (x64)](https://github.com/YizhengWw/HachimoDock/releases/download/v0.1.201/HachimiDock_0.1.201_Windows-x64-setup.exe)
+Version 0.1.232 supports changing the followed agent over paired Wi-Fi and shows the active connection in the device dashboard. The desktop client prefers USB when connected. WiFi6 v3 firmware adds custom Bluetooth shortcuts. Both installers include OTA firmware for the WiFi6 and Pico boards with ESP32-P4 v1 and v3 chips. WiFi6 v1 uses R273 with an H.264 compatibility fix, while the other variants use R272. Verify downloads with [SHA256SUMS](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/SHA256SUMS). Prebuilt installers support Apple silicon and Windows x64. See the release notes for the public source baseline.
 
-See [v0.1.201](https://github.com/YizhengWw/HachimoDock/releases/tag/v0.1.201) for the installers and verify downloads against `SHA256SUMS`. This release improves USB connection during cold boot and Codex session status display. The desktop client bundles R181 firmware updates for ESP32-P4 v1 and v3. Intel Mac and Linux installers are not provided.
-
-Complete flashing kits are for first installation or factory recovery. Choose the kit for the actual chip revision: **v1 and v3 are not interchangeable**. A complete flash erases settings, appearances and components. Routine client OTA updates only the application and does not repartition existing devices. See [firmware build and flashing](firmware/BUILD.md).
+Complete flashing kits are for first installation or factory recovery. Match both the board model and the chip revision; **WiFi6 and Pico, and v1 and v3, are not interchangeable**. A complete flash erases settings, appearances and components. Routine client OTA updates only the application and does not repartition existing devices. See [firmware build and flashing](firmware/BUILD.md).
 
 ## Features and compatibility
 
@@ -25,19 +23,19 @@ Complete flashing kits are for first installation or factory recovery. Choose th
 - Long-press SW2 in the pet view to start or end real-time conversation, after configuring speech/chat services.
 - Import or generate appearances; compatible firmware supports separate status-audio synchronization.
 - Install games, tools and PC-fed components. Optional missing touch capability does not block installation, but touch-dependent gameplay may be unavailable. Schema, integrity and storage checks still apply.
-- Adjust device volume and automatic/manual city location below voice input on the device home page. City selection is not GPS positioning and can be disabled.
+- Manage device volume, city selection and Wi-Fi pairing in Settings. On the device, long-press SW3 or open Settings from the component center.
 
 Integrations include ChatGPT (Codex), Claude, OpenClaw, MiMoCode, WorkBuddy, DeepSeek Harness, Prism and ZCode. Status reporting, dictation, sending and desktop conversation switching are distinct capabilities. WorkBuddy, DeepSeek and ZCode target conversations must be opened in their own apps; selecting a device bubble does not switch those desktop conversations. Prism device bubble selection switches its desktop conversation through its bridge plugin. ZCode status comes from its local logs and session store and carries no reply body or token usage. MiMoCode voice support is platform-dependent. See the [Agent matrix](pc/docs/agent-integration-audit.md) and [WorkBuddy guide](pc/docs/workbuddy.md).
 
 Unavailable or ambiguous editors stop the operation. Unknown write/send results are not automatically replayed. Detecting an Agent does not prove its editor is ready. Runtime features depend on actual firmware capabilities; host tests and successful compilation do not establish hardware, performance or acoustic acceptance.
 
-Public installers do not supply service API keys. Enter your own credentials in API settings. Online recognition, generation, data providers and Agents may require internet access; PC-fed components require the manager to remain running. User-uploaded materials retain their respective rights.
+Online recognition, generation, data providers and Agents may require internet access; PC-fed components require the manager to remain running. User-uploaded materials retain their respective rights.
 
 ## Installation and default controls
 
-The macOS release package is Developer ID-signed and Apple-notarized; the Windows installer is not publisher-signed. Verify its source and checksum before following the operating system's security prompts. Do not disable Gatekeeper or remove protections from unknown downloads. On macOS, allow the client under **System Settings → Privacy & Security → Accessibility** for Agent input.
+The macOS installer is Developer ID signed and notarized by Apple. The Windows installer is unsigned. Verify its source and checksum before following the operating system's security prompts. Do not disable Gatekeeper or remove protections from unknown downloads. On macOS, allow the client under **System Settings → Privacy & Security → Accessibility** for Agent input.
 
-SW1 short press and joystick centre confirm; SW2 short press switches pet/component views; SW3 returns. Joystick directions select sessions/components or perform component actions. These defaults can be changed in the manager. Confirming voice input is separate from approving an Agent's tool permissions.
+SW1 short press and joystick centre confirm; SW2 short press switches pet/component views; SW3 short press returns. Long-press SW3 to open device settings. Joystick directions select sessions/components or perform component actions. These defaults can be changed in the manager. Confirming voice input is separate from approving an Agent's tool permissions.
 
 ## Hardware and development
 
@@ -67,4 +65,4 @@ We also thank everyone who contributed development, testing, feedback and commun
 
 Home-control capabilities integrate [Xiaomi MiLoCo](https://github.com/XiaoMi/xiaomi-miloco), whose relevant works are copyrighted by Xiaomi and governed by the [Xiaomi Miloco License](licenses/Xiaomi-Miloco-LICENSE.md). This project grants no additional commercial, sublicensing or trademark rights.
 
-For project contact, see [作者 / Author](README.md#作者--author). Report bugs through Issues with versions and reproduction steps, excluding credentials, personal data and raw logs. Report security issues privately under [SECURITY.md](SECURITY.md).
+For project contact, see [作者 / Author](README.md#作者--author). Report bugs through Issues with versions and reproduction steps, with personal data removed. Report security issues privately under [SECURITY.md](SECURITY.md).

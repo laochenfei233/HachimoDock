@@ -34,21 +34,19 @@
 
 HachimoDock（哈基米机）是面向 AI Agent 的桌面交互终端，由 Windows/macOS 管理端与 ESP32-P4 设备组成，提供工作状态显示、语音输入、自定义形象和互动组件。桌面应用的安装名称为 **HachimiDock**，部分开发文档使用 **Pet Manager** 指代管理端。
 
-[English](README.en.md) · [下载最新版本](https://github.com/YizhengWw/HachimoDock/releases/latest) · [问题反馈](https://github.com/YizhengWw/HachimoDock/issues) · [安全反馈](SECURITY.md)
+[English](README.en.md) · [下载最新版本](https://github.com/ai-maker-lab/HachimoDock/releases/latest) · [问题反馈](https://github.com/YizhengWw/HachimoDock/issues) · [安全反馈](SECURITY.md)
 
 ## 当前版本与下载
 
-| 项目 | 版本 / 平台 | 获取方式 |
+| 项目 | 版本 | 下载 |
 | --- | --- | --- |
-| 桌面安装包 | **0.1.201**；macOS Apple silicon / Windows x64 | [Release 附件](https://github.com/YizhengWw/HachimoDock/releases/tag/v0.1.201) |
-| 配套设备固件 | **0.7.103-p4-r181**；ESP32-P4 v1 / v3 | 随客户端提供；日常升级使用客户端 |
-| 当前源码 | 客户端版本 0.1.201 / 固件版本 R181，可能包含发布后的修正 | `main`；[PC 构建](pc/README.md)、[固件构建](firmware/BUILD.md) |
+| Windows x64 | **0.1.232** | [下载安装包](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/HachimiDock_0.1.232_Windows-x64-setup.exe) |
+| macOS Apple silicon | **0.1.232** | [下载安装包](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/HachimiDock_0.1.232_macOS-arm64.dmg) |
+| 配套设备固件 | **0.7.103-p4-r272 / R273** | [WiFi6 / Pico 完整烧录包](https://github.com/ai-maker-lab/HachimoDock/releases/tag/v0.1.232#设备固件) |
 
-[下载 Mac 0.1.201（Apple silicon）](https://github.com/YizhengWw/HachimoDock/releases/download/v0.1.201/HachimiDock_0.1.201_macOS-arm64.dmg) · [下载 Windows 0.1.201（x64）](https://github.com/YizhengWw/HachimoDock/releases/download/v0.1.201/HachimiDock_0.1.201_Windows-x64-setup.exe)
+0.1.232 支持已配对设备通过 Wi‑Fi 切换 Agent 跟随，控制台显示当前连接方式，USB 在线时优先使用 USB。WiFi6 v3 固件支持自定义蓝牙快捷键。安装包内置 WiFi6 和 Pico 两种板型的 v1、v3 OTA 固件，其中 WiFi6 v1 使用带 H.264 兼容修复的 R273，其余为 R272。下载后请核对 [SHA256SUMS](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/SHA256SUMS)。
 
-0.1.201 改善 USB 冷启动连接和 Codex 会话状态显示，客户端内置 R181 升级固件。首次完整烧录请按实际芯片选择 v1 / v3 对应镜像。安装包的校验值见 [v0.1.201 发布页](https://github.com/YizhengWw/HachimoDock/releases/tag/v0.1.201) 的 `SHA256SUMS`。
-
-当前预编译桌面包覆盖 Apple silicon Mac 和 Windows x64；不提供 Intel Mac 或 Linux 安装包。macOS 包已使用 Developer ID 签名并通过 Apple 公证，Windows 安装器未做发行者签名。下载后先按 `SHA256SUMS` 核对完整性；不要关闭系统安全检查来运行来源不明的副本。
+当前预编译客户端支持 Apple silicon Mac 和 Windows x64；不提供 Intel Mac 或 Linux 安装包。本版 macOS 安装包已使用 Developer ID 签名并通过 Apple 公证。Windows 安装器未做数字签名，首次运行可能出现系统提示。公开源码与安装包的对应关系见发布说明；[PC 构建](pc/README.md)和[固件构建](firmware/BUILD.md)文档以当前源码为准。
 
 ## 核心能力
 
@@ -58,12 +56,12 @@ HachimoDock（哈基米机）是面向 AI Agent 的桌面交互终端，由 Wind
 | 语音输入 | 按住语音键录音，松开后识别并追加到目标输入框；确认后才发送。灰色提示文字不属于草稿。 |
 | 实时对话 | 在宠物页面长按 SW2 开始或结束；使用用户配置的识别、对话和语音服务。 |
 | 形象与音效 | 内置西高地形象，支持导入或生成自定义外观、状态视频和提示音；兼容固件支持独立下发音效。 |
-| 组件中心 | 预览、安装和移除游戏、工具及 PC 数据组件；通过 `petui` Skill 创作声明式有界组件。 |
-| 音量与城市 | 首页语音输入模块下方统一调整设备总音量、自动识别城市或搜索并保存手动城市/区县。 |
+| 组件中心 | 预览、安装和移除游戏、工具及 PC 数据组件。可用 PetUI 创作声明式或 WASM 组件。 |
+| 设备设置 | 在桌面端「设置」中管理音量、城市与 Wi-Fi 配对。设备默认长按 SW3 或从组件中心进入系统设置。 |
 | 按键配置 | 配置三个按键与摇杆的操作，组件退出遵循设备全局返回设置。 |
 | USB 协同 | 桌面端负责状态、数据、素材与升级传输；连接状态和回执未知时不会自动重放变更。 |
 
-公开发行版不提供服务 Key。需要语音、对话或内容生成能力时，请在客户端“API 配置”中填写自己的凭据。城市定位可关闭；自动模式通过出口 IP 估算城市，不能代替 GPS。详见[音量与共享城市](pc/docs/shared-device-settings.md)。
+城市定位可关闭；自动模式通过出口 IP 估算城市，不能代替 GPS。详见[音量与共享城市](pc/docs/shared-device-settings.md)。
 
 ### Agent 兼容范围
 
@@ -104,6 +102,7 @@ HachimoDock（哈基米机）是面向 AI Agent 的桌面交互终端，由 Wind
 | SW2 短按 | 切换宠物页面与组件中心；组件可绑定自己的动作 |
 | SW2 长按 | 开始或结束实时对话 |
 | SW3 短按 | 返回或取消 |
+| SW3 长按 | 打开设备系统设置 |
 | 摇杆方向 | 选择会话、组件或执行组件映射动作 |
 
 这些是出厂默认值，用户配置优先。语音确认发送不等于批准 Agent 的工具权限请求。WorkBuddy 的操作边界见[专门说明](pc/docs/workbuddy.md)。
@@ -112,7 +111,7 @@ macOS 安装受阻时，先检查下载来源和校验值，再按系统“隐�
 
 ### 新设备或恢复出厂
 
-Release 提供 v1、v3 两种完整烧录包，均包含 Bootloader、应用固件、形象、组件及双平台烧录工具。请按实际芯片修订版选择，不能互刷；微雪 ESP32-P4-WIFI6-M 的 M 不代表芯片版本。同一芯片的固件由 Windows/macOS 共用。完整镜像会覆盖设备现有数据。
+[v0.1.232 Release](https://github.com/ai-maker-lab/HachimoDock/releases/tag/v0.1.232#设备固件) 提供 WiFi6 和 Pico 原底板的完整烧录包，两种板型各有 v1、v3 版本。包内包含 Bootloader、应用固件、形象、组件及双平台烧录工具。请同时核对板型和实际芯片修订版；微雪 ESP32-P4-WIFI6-M 的 M 不代表芯片版本。同一芯片的固件由 Windows/macOS 共用。完整镜像会覆盖设备现有数据。
 
 **v1 与 v3 烧录包不可互刷，具体版本可以咨询客服进行确认。** 包内脚本需要 Python 3.10+，自动安装 esptool **5.4.0**。屏幕连接 **DSI**，不是 CSI；请断电后插拔排线。详细版本和步骤见 [固件构建与烧录指南](firmware/BUILD.md)。
 
@@ -159,8 +158,8 @@ v3 的 24 MHz 显示修复已在实机确认恢复宠物动画；本版本按键
 | 内容 | 入口 |
 |---|---|
 | 硬件复刻总入口 | [OSHWHub 项目页](https://oshwhub.com/eda_gqvzlprk/project_cnbmkbjc#3-%E7%A1%AC%E4%BB%B6%E5%A4%8D%E5%88%BB) |
-| 桌面客户端与完整固件 | [GitHub Releases](https://github.com/YizhengWw/HachimoDock/releases/latest) |
-| 完整性校验 | 当前 Release 提供 `SHA256SUMS`；烧录清单位于完整烧录包内 |
+| 桌面客户端与完整固件 | [GitHub Releases](https://github.com/ai-maker-lab/HachimoDock/releases/latest) |
+| 完整性校验 | [SHA256SUMS](https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.232/SHA256SUMS)，烧录包内另有分段校验清单 |
 
 ## 软件架构与开发
 
@@ -191,7 +190,7 @@ flowchart LR
 
 **设备一定要联网吗？** 设备状态、形象和组件同步走 USB，不要求 ESP32-P4 加入局域网。语音识别、Agent 本身以及 AI 形象或组件生成仍可能需要电脑联网。
 
-**如何反馈？** 使用 [GitHub Issues](https://github.com/YizhengWw/HachimoDock/issues)，附客户端/固件版本、系统和复现步骤。不要公开 Key、完整用户日志、对话正文或设备/个人标识。安全问题请按 [SECURITY.md](SECURITY.md) 私下反馈。
+**如何反馈？** 使用 [GitHub Issues](https://github.com/YizhengWw/HachimoDock/issues)，附客户端/固件版本、系统和复现步骤。提交前请移除日志、对话及设备信息中的个人数据。安全问题请按 [SECURITY.md](SECURITY.md) 私下反馈。
 
 ## 下载完整性
 
