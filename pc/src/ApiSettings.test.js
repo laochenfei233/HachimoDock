@@ -1,6 +1,6 @@
 /**
  * [Input] ApiSettings page, App routing, feature pages, and shared stylesheet source.
- * [Output] Editable LLM/ASR/TTS model/default regression coverage plus centralized API-key ownership, per-provider speech scopes, speech key guide, saved-ASR broadcasts, routing and responsive layout.
+ * [Output] Editable LLM/ASR/TTS model/default regression coverage plus centralized API-key ownership, per-provider speech scopes, speech key guide, saved-ASR broadcasts, routing, responsive layout, and the in-place appearance theme switch.
  * [Pos] test node in pc/src
  * [Sync] If this file changes, update `pc/src/.folder.md`.
  */
@@ -124,7 +124,7 @@ test("LLM scope explanation belongs to header and usage spacing is page-scoped",
   assert.match(page, /title="对话大模型" subtitle="[^"]*不影响 ChatGPT、Claude 等 Agent 的语音输入/);
   assert.doesNotMatch(page, /<p[^>]*>此配置用于和宠物聊天/);
   assert.match(page, /className="api-settings-page"/);
-  assert.match(readSource("styles.css"), /\.api-settings-page \.usage-help \{ margin: 0; \}/);
+  assert.match(readSource("styles.css"), /\.api-settings-page \.usage-help \{ margin: 0; padding-top: 10px; border-top: 1px solid var\(--line-soft\); \}/);
   assert.match(readSource("styles.css"), /\.api-settings-page \.card__subtitle \{ max-width: none;/);
 });
 
@@ -307,4 +307,14 @@ test("API settings uses a responsive provider grid", () => {
   assert.match(css, /\.api-settings__provider-grid\s*\{/);
   assert.match(css, /@media \(max-width: 900px\)[\s\S]*\.api-settings__provider-grid/);
   assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.api-settings__form--asr/);
+});
+
+test("appearance group switches the persisted theme in place", () => {
+  const source = readSource("ApiSettings.jsx");
+  assert.match(source, /aria-label="外观主题"/);
+  assert.match(source, /setThemePreference\(option\.id\)/);
+  assert.match(source, /subscribeTheme\(\(state\) => setPreference\(state\.preference\)\)/);
+  const theme = readSource("lib/theme.js");
+  assert.match(theme, /THEME_STORAGE_KEY = "pet-manager\.theme-preference"/);
+  assert.match(theme, /document\.documentElement\.dataset\.theme = theme/);
 });

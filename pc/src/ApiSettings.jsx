@@ -1,6 +1,6 @@
 /**
- * [Input] Shared avatar provider configs including persisted video parameters, native Volcengine ASR credential commands, per-provider ASR/TTS voice-chat status, and optional return navigation.
- * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), and saved ASR changes are broadcast with save vs. test results distinguished.
+ * [Input] Shared avatar provider configs including persisted video parameters, native Volcengine ASR credential commands, per-provider ASR/TTS voice-chat status, the persisted appearance preference, and optional return navigation.
+ * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), saved ASR changes are broadcast with save vs. test results distinguished, and an appearance group switches light/dark/auto theme in place.
  * [Pos] top-level page node in pc/src
  * [Sync] If this file changes, update this header and `pc/src/.folder.md`.
  */
@@ -29,6 +29,11 @@ import { VideoModelSelect } from "./VideoGenerationSettings.jsx";
 import { useUsageHelp } from "./shell/DeviceContext.jsx";
 import UsageHelp from "./UsageHelp.jsx";
 import { useExitProtection } from "./lib/exit-protection.js";
+import {
+  getThemeState,
+  setThemePreference,
+  subscribeTheme,
+} from "./lib/theme.js";
 import {
   VIDEO_PROVIDERS,
   loadProviderConfig,
@@ -76,6 +81,36 @@ function resultToneClass(tone) {
 }
 
 const DASHSCOPE_TTS_VOICES = TTS_PROVIDER_PRESETS.find((preset) => preset.id === "dashscope")?.voices || [];
+
+const THEME_OPTIONS = [
+  { id: "auto", label: "跟随系统" },
+  { id: "light", label: "浅色" },
+  { id: "dark", label: "深色" },
+];
+
+function AppearanceCard() {
+  const [preference, setPreference] = useState(() => getThemeState().preference);
+  useEffect(() => subscribeTheme((state) => setPreference(state.preference)), []);
+  return (
+    <Card title="外观" subtitle="界面主题立即生效；「跟随系统」随系统深浅色自动切换。">
+      <div className="api-settings__segments" role="radiogroup" aria-label="外观主题">
+        {THEME_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="radio"
+            aria-checked={preference === option.id}
+            className={"api-settings__segment" + (preference === option.id ? " is-active" : "")}
+            onClick={() => setThemePreference(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <p className="muted small">深色模式下界面与组件预览同步变暗；图片和设备屏幕内容保持原样。</p>
+    </Card>
+  );
+}
 
 export default function ApiSettings({ onBack, configReadError = "", active = true }) {
   const usageHelp = useUsageHelp();
@@ -580,12 +615,6 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
           </span>
         )}
       >
-        <div className="usage-help">
-          <p><strong>语音输入：</strong>{usageHelp.voice} {usageHelp.confirm}</p>
-          <p><strong>实时对话：</strong>{usageHelp.chat} 还需配置下方「语音合成」和「对话大模型」。</p>
-          {usageHelp.pending && <p className="usage-help__notice">按键配置有修改，请先同步到设备。</p>}
-          <details><summary>使用前需要什么</summary><p>请保持设备连接电脑，并让 Pet Manager 持续运行。默认使用豆包 ASR 2.0 和 TTS 2.0；更换服务商后，每个服务商需分别配置 API Key。</p></details>
-        </div>
         <div className="api-settings__segments" role="radiogroup" aria-label="语音识别服务商">
           {ASR_PROVIDER_PRESETS.map((preset) => (
             <button
@@ -690,6 +719,12 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
             ? <AlertCircle size={13} />
             : <CheckCircle2 size={13} />}
           {speech.asrMessage}
+        </div>
+        <div className="usage-help">
+          <p><strong>语音输入：</strong>{usageHelp.voice} {usageHelp.confirm}</p>
+          <p><strong>实时对话：</strong>{usageHelp.chat} 还需配置下方「语音合成」和「对话大模型」。</p>
+          {usageHelp.pending && <p className="usage-help__notice">按键配置有修改，请先同步到设备。</p>}
+          <details><summary>使用前需要什么</summary><p>请保持设备连接电脑，并让 Pet Manager 持续运行。默认使用豆包 ASR 2.0 和 TTS 2.0；更换服务商后，每个服务商需分别配置 API Key。</p></details>
         </div>
       </Card>
 
@@ -885,6 +920,12 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
               disabled={voiceChat.llmPending || voiceChat.loading}
             />
           </label>
+          <label className="ui-field api-settings__search-option">
+            <span><input type="checkbox" checked={voiceChat.llmWebSearch}
+              disabled={voiceChat.llmPending || voiceChat.loading}
+              onChange={event => setVoiceChat(current => ({ ...current, llmWebSearch: event.target.checked }))} /> 按需联网检索</span>
+            <span className="muted small">询问最新消息时查询，闲聊和家居控制不查询。使用当前服务商的 Key；模型需支持原生搜索，账号可能需开通权限并产生额外费用。查询后由宠物直接回答。修改后点击保存，下次开始聊天生效。</span>
+          </label>
           <div className="api-settings__save-row">
             <button
               type="button"
@@ -903,12 +944,6 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
             : <CheckCircle2 size={13} />}
           {voiceChat.llmMessage}
         </div>
-        <label className="ui-field api-settings__search-option">
-          <span><input type="checkbox" checked={voiceChat.llmWebSearch}
-            disabled={voiceChat.llmPending || voiceChat.loading}
-            onChange={event => setVoiceChat(current => ({ ...current, llmWebSearch: event.target.checked }))} /> 按需联网检索</span>
-          <span className="muted small">询问最新消息时查询，闲聊和家居控制不查询。使用当前服务商的 Key；模型需支持原生搜索，账号可能需开通权限并产生额外费用。查询后由宠物直接回答。修改后点击保存，下次开始聊天生效。</span>
-        </label>
         <LlmNetworkSettings />
       </Card>
 
@@ -1120,6 +1155,8 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
           )}
         </div>
       </Card>
+
+      <AppearanceCard />
     </PageShell>
     </div>
   );
