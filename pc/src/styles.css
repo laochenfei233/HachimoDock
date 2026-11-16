@@ -142,7 +142,7 @@
   --text-faint: #6c6c71;
   --text-on-accent: #ffffff;
 
-  --accent: #ff9a1f;
+  --accent: #ff9f0a;
   --accent-strong: #ffb340;
   --accent-soft: #3d2a14;
   --accent-ring: rgba(255, 154, 31, 0.28);
@@ -1206,6 +1206,15 @@ select:focus-visible {
 
 .switch input:checked + .switch__track .switch__thumb {
   transform: translateX(16px);
+}
+
+/* Press feedback: the thumb compresses slightly under the pointer. */
+.switch:active:not(.is-disabled) input:not(:checked) + .switch__track .switch__thumb {
+  transform: scale(0.88);
+}
+
+.switch:active:not(.is-disabled) input:checked + .switch__track .switch__thumb {
+  transform: translateX(16px) scale(0.88);
 }
 
 .switch input:focus-visible + .switch__track {
@@ -10507,7 +10516,7 @@ select:focus-visible {
 .component-tool-error {
   margin: 0;
   padding: 8px 10px;
-  background: #fff0f0;
+  background: var(--danger-soft);
   color: var(--danger);
   border-radius: var(--radius-md);
   font-size: 12px;
@@ -11034,16 +11043,16 @@ select:focus-visible {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #d0d3d8;
+  background: var(--line-strong);
   transition: background 200ms, box-shadow 200ms;
 }
 .ota-modal__dot.is-off {
-  background: #c0c4cc;
+  background: var(--text-faint);
   animation: ota-pulse 1.4s infinite;
 }
 .ota-modal__dot.is-on {
-  background: #4ade80;
-  box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.25);
+  background: var(--success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 25%, transparent);
   animation: none;
 }
 @keyframes ota-pulse {
@@ -11070,7 +11079,7 @@ select:focus-visible {
 .ota-modal__error {
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  background: #fff0f0;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 .ota-modal__actions {
@@ -12026,7 +12035,7 @@ select:focus-visible {
   border-radius: var(--radius-lg);
   background:
     radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--accent-soft) 34%, transparent) 0 8%, transparent 26%),
-    linear-gradient(145deg, #faf9f6 0%, #f4f3ef 100%);
+    linear-gradient(145deg, var(--bg-soft) 0%, var(--surface-muted) 100%);
   box-shadow: none;
 }
 
@@ -13089,7 +13098,7 @@ select:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  color: #c0341d;
+  color: var(--danger);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -14317,19 +14326,19 @@ select:focus-visible {
 
 .firmware-update-modal__result {
   padding: 10px 12px;
-  border: 1px solid #b8d9c5;
+  border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
   border-radius: var(--radius-sm);
-  background: #edf8f1;
-  color: #1f5b37;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: 12px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
 
 .firmware-update-modal__result[data-tone="error"] {
-  border-color: #edc0c0;
-  background: #fff1f1;
-  color: #8a2f2f;
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .firmware-update-modal__footer {
@@ -14383,7 +14392,7 @@ select:focus-visible {
 }
 
 .device-diagnostics-modal__toolbar > span.is-fault {
-  color: #9a4e12;
+  color: var(--warning-strong);
 }
 
 .device-diagnostics-modal__metrics {
@@ -14417,7 +14426,7 @@ select:focus-visible {
 }
 
 .device-diagnostics-modal__metric[data-tone="warning"] dd {
-  color: #9a4e12;
+  color: var(--warning-strong);
 }
 
 .device-diagnostics-modal__loading {
@@ -14432,19 +14441,19 @@ select:focus-visible {
 
 .device-diagnostics-modal__message {
   padding: 9px 11px;
-  border: 1px solid #b8d9c5;
+  border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
   border-radius: var(--radius-sm);
-  background: #edf8f1;
-  color: #1f5b37;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: 11px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .device-diagnostics-modal__message[data-tone="error"] {
-  border-color: #edc0c0;
-  background: #fff1f1;
-  color: #8a2f2f;
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .device-diagnostics-modal__actions {
@@ -14619,9 +14628,9 @@ select:focus-visible {
   font-weight: 700;
 }
 
-.realtime-chat-panel__state.is-listening { color: #1b7f4a; border-color: #8fd4ac; }
-.realtime-chat-panel__state.is-thinking { color: #b26a00; border-color: #f2c26b; }
-.realtime-chat-panel__state.is-speaking { color: #1d5fbf; border-color: #9cc0f2; }
+.realtime-chat-panel__state.is-listening { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
+.realtime-chat-panel__state.is-thinking { color: var(--warning-strong); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.realtime-chat-panel__state.is-speaking { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
 
 .realtime-chat-panel__dialog {
   display: flex;
@@ -14629,7 +14638,7 @@ select:focus-visible {
   gap: 4px;
   padding: 8px 10px;
   border-radius: var(--r, 8px);
-  background: var(--panel2, #f6f6f4);
+  background: var(--surface-muted);
   font-size: 13px;
 }
 
@@ -14648,7 +14657,7 @@ select:focus-visible {
   margin: 2px 0 14px;
   width: fit-content;
   max-width: 100%;
-  background: var(--surface-sunken, var(--surface-sunken));
+  background: var(--surface-sunken);
   border-radius: 9px;
 }
 

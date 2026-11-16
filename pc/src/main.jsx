@@ -1,6 +1,6 @@
 /**
- * [Input] App composition and shared styles; independent startup guard in index.html.
- * [Output] Visible startup/render failure recovery without mutation replay.
+ * [Input] App composition and shared styles; theme preference (lib/theme.js) applies before render; independent startup guard in index.html.
+ * [Output] Visible startup/render failure recovery without mutation replay and a resolved light/dark theme on first paint.
  * [Pos] React bootstrap; App imports asynchronously so root-module failures are caught.
  * [Sync] pc/src/.folder.md.
  */
