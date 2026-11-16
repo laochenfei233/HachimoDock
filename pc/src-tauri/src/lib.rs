@@ -11978,6 +11978,7 @@ pub fn run() {
             auth_provider::auth_provider_status,
             weather_keys::weather_key_status,
             weather_keys::save_weather_key,
+            weather_keys::clear_weather_key,
             auth_provider::auth_provider_configure,
             auth_provider::auth_provider_begin,
             auth_provider::auth_provider_poll,
