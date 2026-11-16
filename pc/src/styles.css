@@ -145,7 +145,7 @@
   --accent: #ff9f0a;
   --accent-strong: #ffb340;
   --accent-soft: #3d2a14;
-  --accent-ring: rgba(255, 154, 31, 0.28);
+  --accent-ring: rgba(255, 159, 10, 0.28);
 
   --success: #30d158;
   --success-soft: #1e3524;
@@ -11056,8 +11056,8 @@ select:focus-visible {
   animation: none;
 }
 @keyframes ota-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(192, 196, 204, 0.5); }
-  50% { box-shadow: 0 0 0 6px rgba(192, 196, 204, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-faint) 50%, transparent); }
+  50% { box-shadow: 0 0 0 6px transparent; }
 }
 .ota-modal__progress {
   height: 4px;
