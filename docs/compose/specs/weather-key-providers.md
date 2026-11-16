@@ -52,7 +52,7 @@ Caiyun  { lat: f64, lon: f64, refresh_sec: u32 },
 | 请求 | `https://{host}/v7/weather/now?location={lon},{lat}&key={key}` | `https://api.caiyunapp.com/v2.6/{token}/{lon},{lat}/realtime.json` |
 | host | 用户可配（2024 起新账号为专属 API Host；默认 devapi.qweather.com），存非密配置文件 | 固定 api.caiyunapp.com |
 | 成功判定 | `code=="200"` | `status=="ok"` 且 `realtime.status=="ok"` |
-| text | `now.text`（官方中文），罕见词 PC 侧归一化到图集词表（大暴雨→暴雨等），未知词原样透传（设备逐字回退内置字库） | `skycon` 经 PC 内置 20 项映射 → 中文 |
+| text | `now.text`（官方中文），罕见词 PC 侧归一化到图集词表（大暴雨→暴雨等），未知词原样透传（设备逐字回退内置字库） | `skycon` 经 PC 内置 21 项映射 → 中文 |
 | temp | `now.temp`（整数字符串，原样） | `realtime.temperature`（浮点）PC 四舍五入成整数字符串 |
 | 失败 | 源置 error → Null → 组件显示"等待数据"；Key 未配置 → 同样 error，错误串为静态文案 | 同左 |
 
@@ -61,9 +61,9 @@ Caiyun  { lat: f64, lon: f64, refresh_sec: u32 },
 ### S2.3 Key 存取（新模块 weather_keys.rs）
 
 - keyring 服务名 `com.petmanager.desktop.weather`，条目 `qweather` / `caiyun`（复用 auth_provider.rs 的 keyring 模式；Windows=系统凭据库）。
-- 和风 API Host 非密，存 `{app-data}/weather-provider.json`（deny_unknown_fields，损坏时报错不覆盖）。
+- 和风 API Host 非密，存 `{app-data}/weather-provider.json`（deny_unknown_fields；读取损坏时静默回默认 devapi.qweather.com，写入原子替换）。
 - Key 规则：非空、≤128 字节；存储失败明确报错；状态命令只返回 configured 布尔（**永不回显 Key**）。
-- Tauri 命令：`weather_key_status()`、`save_weather_key(provider, value, qweather_host)`（value 空 = 删除凭据）。
+- Tauri 命令：`weather_key_status()`、`save_weather_key(provider, value, qweather_host)`（value 空 = 保持不变；删除走 `clear_weather_key`）、`clear_weather_key(provider)`。host 先于 key 校验，拒绝时不留半写状态；host 留空 = 保持当前值。
 
 ### S2.4 设置页（ApiSettings.jsx）
 
@@ -78,8 +78,7 @@ Caiyun  { lat: f64, lon: f64, refresh_sec: u32 },
 - application.json：`wx+wt` 两源换成单源 `wx: {"kind":"qweather","lat":29.87,"lon":121.54,"refresh_sec":900}`；
   `wxa`=text（官方中文直出）、`wxt`=温度段（text 缺→""，temp 缺→""，否则 " {temp}℃"）；
   源数 8→5（clock/wx/wd/wk/fmt）。bindings/设备 runtime 不变。
-- 图集扩展：和风词表超出当前 24 字 → cjk 图集改 7 列×4 行=224×128（宽 224≤240 免 wide-atlas），
-  新增 小中大暴夹冰雹雾霾沙尘浮强对流 共 14 字（去 年/等待数据——后者走 binding fallback 由内置字库渲染）；
+- 图集扩展：cjk 图集改 7 列×4 行=224×128（宽 224≤240 免 wide-atlas），字符集 月日星期一二三四五六晴多云阴雨雪阵雷+小中大暴夹冰雹霾℃ 共 27 字（去 年/等待数据——绑定 fallback 与负号由内置字库渲染）；沙尘浮强对流等罕见和风词经 PC 归一化或逐字回退内置字库；
   pet 相应缩至 178×178（像素预算 97220/98304）。
 - 已知边界：PC 端未配置 Key / 上游失败 / 断连 → 组件显示"等待数据"（既有降级链路不变）。
 

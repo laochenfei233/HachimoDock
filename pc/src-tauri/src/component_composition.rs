@@ -960,11 +960,13 @@ fn qweather_now(lat: f64, lon: f64) -> Result<Value, String> {
         .pointer("/now/temp")
         .and_then(Value::as_str)
         .ok_or("和风天气缺少温度")?;
+    let temp_digits = temp.strip_prefix('-').unwrap_or(temp);
     if text.len() > 32
         || text.is_empty()
         || temp.is_empty()
         || temp.len() > 8
-        || !temp.bytes().all(|b| b.is_ascii_digit() || b == b'-')
+        || temp_digits.is_empty()
+        || !temp_digits.bytes().all(|b| b.is_ascii_digit())
     {
         return Err("和风天气数据超出范围".into());
     }
@@ -3266,6 +3268,69 @@ mod tests {
         assert!(crate::app_services::parse(&serde_json::to_vec(&missing).unwrap(),&r).is_err());
         let mut old=declaration;old["engine"]=json!(ENGINE);
         assert!(crate::app_services::parse(&serde_json::to_vec(&old).unwrap(),&r).is_err());
+    }
+    #[test]
+    fn revoked_inflight_fetch_never_wedges_the_source() {
+        let dead = ResourceOwner::fresh();
+        dead.cancel();
+        let job = Job {
+            resources: dead,
+            key: "k".into(),
+            owner: "cmp".into(),
+            endpoint: String::new(),
+            hosts: vec![],
+            generation: 7,
+            workflow: None,
+            provider: None,
+        };
+        let mut cache = BTreeMap::new();
+        cache.insert("k".into(), Cached {
+            resources: ResourceOwner::fresh(),
+            owner: "cmp".into(),
+            value: Value::Null,
+            error: false,
+            error_message: String::new(),
+            pending: true,
+            last: 5,
+            generation: 7,
+        });
+        finish(&mut cache, &job, Err("网络连接失败".into()));
+        assert!(
+            !cache.contains_key("k"),
+            "a revoked in-flight fetch must drop its entry, not stay `preparing` forever"
+        );
+    }
+    #[test]
+    fn failed_fetch_records_error_and_retries_after_short_backoff() {
+        let job = Job {
+            resources: ResourceOwner::fresh(),
+            key: "k".into(),
+            owner: "cmp".into(),
+            endpoint: String::new(),
+            hosts: vec![],
+            generation: 1,
+            workflow: None,
+            provider: None,
+        };
+        let mut cache = BTreeMap::new();
+        cache.insert("k".into(), Cached {
+            resources: ResourceOwner::fresh(),
+            owner: "cmp".into(),
+            value: Value::Null,
+            error: false,
+            error_message: String::new(),
+            pending: true,
+            last: 5,
+            generation: 1,
+        });
+        finish(&mut cache, &job, Err("网络连接失败".into()));
+        let entry = &cache["k"];
+        assert!(!entry.pending && entry.error);
+        assert_eq!(entry.error_message, "网络连接失败");
+        assert_eq!(retry_delay(false, 900, true), FAILED_RETRY_SECS);
+        assert!(FAILED_RETRY_SECS < 900);
+        assert_eq!(retry_delay(false, 900, false), 900);
+        assert_eq!(retry_delay(true, 900, false), 15);
     }
     #[test]
     fn weather_provider_sources_parse_reject_and_normalize() {

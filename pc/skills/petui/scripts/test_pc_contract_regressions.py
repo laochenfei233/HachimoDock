@@ -3,6 +3,7 @@ import copy
 import json
 import unittest
 from pathlib import Path
+import app_services
 import bounded_app
 import data_rows
 import validate_generated_widget as validator
@@ -53,6 +54,21 @@ class PcContractRegressions(unittest.TestCase):
                 expected = case['expected']
                 self.assertEqual((view['count'], view['pages'], view['page']),
                                  (expected['count'], expected['pages'], expected['page']))
+
+    def test_weather_provider_sources_parse_reject_and_normalize(self):
+        suite = json.loads(Path(__file__).parent.parent.joinpath('contracts/weather-providers-v1.json').read_text())
+        runtime = suite['runtime']
+        self.assertEqual(app_services.application_errors(suite['declaration'], runtime), [])
+        for case in suite['rejections']:
+            with self.subTest(case=case['pointer']):
+                bad = copy.deepcopy(suite['declaration'])
+                parent, key = case['pointer'].rsplit('/', 1)
+                node = bad
+                for part in [p for p in parent.split('/') if p]:
+                    node = node[int(part)] if part.isdigit() else node[part]
+                node[key] = case['value']
+                self.assertEqual(app_services.application_errors(bad, runtime),
+                                 ['组合应用需要有界数据源、精确变量绑定和已声明动作；不允许脚本、凭据或任意 IPC'])
 
 if __name__ == '__main__':
     unittest.main()

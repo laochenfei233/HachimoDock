@@ -163,20 +163,29 @@ pub fn save_weather_key(provider: String, value: String, qweather_host: Option<S
         return Err("未知的天气提供器".into());
     }
     let value = value.trim();
+    // Validate everything before any write: a rejected host must not leave a
+    // half-saved key behind. A blank host keeps the current one (which starts
+    // at DEFAULT_QWEATHER_HOST); typing the default explicitly restores it.
+    let mut host_update = None;
+    if provider == QWEATHER {
+        if let Some(raw_host) = qweather_host {
+            let host = raw_host.trim().to_ascii_lowercase();
+            if !host.is_empty() {
+                if !valid_host(&host) {
+                    return Err("API Host 格式无效".into());
+                }
+                host_update = Some(host);
+            }
+        }
+    }
     if !value.is_empty() {
         if value.len() > 128 || value.chars().any(char::is_control) {
             return Err("Key 格式无效".into());
         }
         store_key(&provider, Some(value))?;
     }
-    if provider == QWEATHER {
-        if let Some(host) = qweather_host {
-            let host = host.trim().to_ascii_lowercase();
-            if !valid_host(&host) {
-                return Err("API Host 格式无效".into());
-            }
-            store_qweather_host(&host)?;
-        }
+    if let Some(host) = host_update {
+        store_qweather_host(&host)?;
     }
     Ok(weather_key_status())
 }
@@ -214,6 +223,20 @@ mod tests {
         assert!(!valid_host("a..b"));
         assert!(valid_host("devapi.qweather.com"));
         assert!(valid_host("abc123.re.qweatherapi.com"));
+    }
+
+    #[test]
+    fn save_with_blank_host_keeps_existing_host() {
+        let root = std::env::temp_dir().join(format!("pet-weather-keys-blank-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        configure_for_test(root.clone());
+        store_qweather_host("abc123.re.qweatherapi.com").unwrap();
+        save_weather_key("qweather".into(), "".into(), Some("   ".into())).unwrap();
+        save_weather_key("qweather".into(), "".into(), None).unwrap();
+        assert_eq!(qweather_host(), "abc123.re.qweatherapi.com");
+        save_weather_key("qweather".into(), "".into(), Some("devapi.qweather.com".into())).unwrap();
+        assert_eq!(qweather_host(), DEFAULT_QWEATHER_HOST);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
