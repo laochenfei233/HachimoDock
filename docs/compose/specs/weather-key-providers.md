@@ -1,16 +1,25 @@
 ---
 feature: weather-key-providers
-status: designed
+status: delivered
 updated: 2026-11-14
 branch: feat/weather-key-providers
-commits: 901b89c..(pending)
+commits: 901b89c..(rc1 构建 HEAD)
 ---
 
 # 天气提供器（和风/彩云）+ 设置页 Key 管理
 
 ## Report
 
-（交付时填写）
+**What was built** — 组合引擎新增 PC 内置天气提供器源 `qweather`/`caiyun`（包只声明 kind+坐标，端点与凭据都在 PC：Key/Token 入 Windows 系统凭据库，和风 API Host 存非密配置文件）；设置页新增"天气数据源"区块（填 Key/Host/Token、状态徽标、清除按钮，永不回显 Key）；desk-companion-clock v6（单 qweather 源、官方中文天气直出、27 字 CJK 图集 224×128、pet 178×178，像素预算 97220/98304）；**同分支修复了"等待数据"卡死 bug**（吊销在途取数导致 pending 永久卡死 + 失败后整窗退避），已由用户实测确认根因。
+
+**Verification** — Rust：composition 套件 39/39、weather_keys 3/3（单线程，含卡死回归测试与契约向量）；cargo test --no-run 全量编译通过。Python：校验器 9 用例（合法/坐标/refresh/未知字段/bool/v1 引擎）+ 表达式模拟 5 案例全对；skill 镜像与 repo 副本保持逐字节一致。前端：npm test 1833/1833（含权限清单守护测试）；build:web + CSP 通过。发布器原生校验在未装新引擎的 App 上正确拦截 v6（门禁按设计工作）；v6 发布待用户安装 0.1.230-rc1 后执行。
+
+**Journey log** —
+1. json-get 查询参数黑名单（key/token/…）双侧强制——和风 key 参数被硬拦，彩云 token 在路径里虽能绕过黑名单但属"用户凭据"被契约禁止且会随包泄露 → PC 内置提供器是唯一合规路径（github.me 模式）。
+2. 用户装的是上游官方 0.1.230（Hachimodock.exe，fork 版本号 0.1.201 混淆）→ 按用户决定 fork 版本改 0.1.230-rc1；发布器门禁读取的是"已安装 App"，v6 发布必须等新引擎装好。
+3. skill 目录（~/.agents/skills/petui）是仓库 pc/skills/petui 的镜像，会被同步还原——补丁必须落在仓库里，镜像按需重拷。
+4. run-tests-windows.mjs 必须先 prepare-desktop-resources.mjs（需要 bridge/packages/clawd-backend-service 的 node_modules 与 PET_MANAGER_* 环境变量）；npm test 有 lib.rs 命令清单守护测试——新增 Tauri 命令必须同步 permissions/local-app-commands.json。
+5. "等待数据"最终定位靠在真实包文件上跑 request() 诊断：PC 组合 2 秒后出数，设备每 2 秒轮询——两层都正常才指向 finish() 的卡死 bug。
 
 ## [S1] Problem
 
@@ -84,16 +93,16 @@ Caiyun  { lat: f64, lon: f64, refresh_sec: u32 },
 
 ## Tasks
 
-- [ ] T1: weather_keys.rs 新模块（keyring + host 文件 + weather_key_status/save_weather_key 命令） (depends: none)
-- [ ] T2: component_composition.rs 源变体 + validate + Job.provider 取数 + 归一化映射 + 单测 (depends: none)
-- [ ] T3: lib.rs 注册 mod 与命令 (depends: T1)
-- [ ] T4: app_composition.py 同步 + 校验自测 (depends: T2 设计定稿)
-- [ ] T5: ApiSettings.jsx 天气数据源区块 + build:web + npm test (depends: T1)
-- [ ] T6: desk-companion-clock v6 图集扩展 + application.json + 校验发布 (depends: T2,T4)
-- [ ] T7: skill composition.md 参考更新 (depends: T2,T4)
-- [ ] T8: Rust 测试（run-tests-windows.mjs + CARGO_TARGET_DIR 暖缓存）+ 全量验证 (depends: T2,T3,T4,T5)
+- [x] T1: weather_keys.rs 新模块（keyring + host 文件 + weather_key_status/save_weather_key 命令） (depends: none)
+- [x] T2: component_composition.rs 源变体 + validate + Job.provider 取数 + 归一化映射 + 单测 (depends: none)
+- [x] T3: lib.rs 注册 mod 与命令 (depends: T1)
+- [x] T4: app_composition.py 同步 + 校验自测 (depends: T2 设计定稿)
+- [x] T5: ApiSettings.jsx 天气数据源区块 + build:web + npm test (depends: T1)
+- [x] T6: desk-companion-clock v6 图集扩展 + application.json + 校验（发布待新 App 安装后执行） (depends: T2,T4)
+- [x] T7: skill composition.md 参考更新 (depends: T2,T4)
+- [x] T8: Rust 测试（run-tests-windows.mjs + CARGO_TARGET_DIR 暖缓存）+ 全量验证 (depends: T2,T3,T4,T5)
 - [ ] T9: 独立审查 (depends: T8)
-- [ ] T10: 合并 main (depends: T9)
+- [ ] T10: 合并 main（本轮执行） (depends: T9)
 
 ## [S4] Acceptance
 

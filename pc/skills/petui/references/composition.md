@@ -122,6 +122,8 @@ PC 同样必须支持 pc-app-composition-v1；只有新固件而旧客户端时�
 | timer | seconds 为 1–86400；输出 seconds/progress/phase，phase 为 paused/running/finished | start/pause/reset |
 | ledger | unit 为 day/event、target 为 1–capacity、capacity 为 1–128、label 为 1–24 UTF-8 字节 | append/remove_latest/previous/next |
 | json-get | endpoint、hosts、refresh_sec；输出公网 JSON | refresh |
+| qweather | lat、lon、refresh_sec；输出 {text,temp}（官方中文天气+整数字符串温度）；Key 存 PC 凭据库 | refresh |
+| caiyun | lat、lon、refresh_sec；输出 {text,temp}（skycon 映射中文+四舍五入整数温度）；Token 存 PC 凭据库 | refresh |
 
 counter/timer 按数据源名字保存在该组件的 `composition-state.json`，原子更新；换包不清除。暂停的计时器不推进，运行中的计时器按 PC 墙钟恢复。存档损坏或类型/范围不兼容时明确报错，不覆盖原数据。最多保留 64 个历史源名；达到配额报错，不静默删除。
 
@@ -145,7 +147,7 @@ ledger 输出 count/target/progress（0–100）/progress_label、span_days/span
 正常清理后可以显式建立新上下文，不恢复已取消任务或重发未知结果。该原生保护
 不代表鉴权连接器、设备后台任务或音频服务已开放。
 
-json-get 只允许无需鉴权的 HTTPS GET、443 端口、1–4 个精确 DNS 域名，不允许 IP 字面量、通配符、用户凭据、常见密钥查询参数或自定义请求头。复用宿主的公网 IP 检查、DNS 钉住、TLS 校验和逐跳域名检查；不能访问本机/私网、关闭证书验证或执行脚本。响应最多 64 KiB；刷新间隔 30 秒至 24 小时，手动刷新至少间隔 15 秒。
+json-get 只允许无需鉴权的 HTTPS GET、443 端口、1–4 个精确 DNS 域名，不允许 IP 字面量、通配符、用户凭据、常见密钥查询参数或自定义请求头。PC 内置天气提供器（qweather/caiyun）是例外通道：端点与凭据都是 PC 内置描述符，包只声明 kind+坐标；Key/Token 存 Windows 系统凭据库（unix 为 0600 私有文件），永不进入包、快照、日志或错误文案，和风 API Host 可在设置中配置（2024 起新账号为专属域名）。复用宿主的公网 IP 检查、DNS 钉住、TLS 校验和逐跳域名检查；不能访问本机/私网、关闭证书验证或执行脚本。响应最多 64 KiB；刷新间隔 30 秒至 24 小时，手动刷新至少间隔 15 秒。
 
 网络在最多 2 个后台工作线程执行，等待队列 8 项、缓存最多 32 项；不阻塞设备事件或串行调用麦克风/AEC。每个源的请求合并；失败保留上次成功 JSON，只在下一刷新窗口补请求。source 状态为 preparing/ready/error/busy。组件停用清除待用缓存，已在途 GET 可能完成但旧代结果被丢弃，不重新启动组件。实例身份、变量类型及存档目录均由宿主校验，包不能指定任意文件路径。
 
