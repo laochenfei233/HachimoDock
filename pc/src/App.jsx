@@ -1,6 +1,6 @@
 /**
  * [Input] Consume DeviceSetup.jsx and DeviceDashboard.jsx.
- * [Output] Always-accessible desktop navigation, retryable USB setup, retained API drafts and explicitly active component observers. Accessibility consent is requested by native Agent operations, not app launch.
+ * [Output] Always-accessible desktop navigation with the HachimiDock brand mark, retryable USB setup, retained API drafts and explicitly active component observers. Accessibility consent is requested by native Agent operations, not app launch.
  * [Pos] component node in pc/src
  * Generation notifications distinguish reference-image rejection with retained partial results from full success.
  * [Sync] If this file changes, update this header and `pc/src/.folder.md`.
