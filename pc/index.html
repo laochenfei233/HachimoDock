@@ -1,13 +1,31 @@
 <!doctype html>
 <!-- [Input] Consume runtime shell definition defined by `pc/.folder.md`. -->
-<!-- [Output] Provide Vite entry HTML to downstream React prototype rendering. -->
+<!-- [Output] Provide Vite entry HTML to downstream React prototype rendering, with an inline theme bootstrap that applies the persisted light/dark choice before React loads. -->
 <!-- [Pos] entry node in ref -->
 <!-- [Sync] If this file changes, update this header and `pc/.folder.md`. -->
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <title>HachimiDock</title>
+    <script>
+      // Theme bootstrap: resolve auto/light/dark before any paint so dark-mode
+      // users never see a light flash. lib/theme.js owns state after load.
+      (function () {
+        try {
+          var stored = localStorage.getItem("pet-manager.theme-preference");
+          var dark = stored === "dark"
+            || ((stored === "" || stored === null || stored === "auto")
+              && window.matchMedia
+              && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

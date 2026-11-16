@@ -1,6 +1,6 @@
 /*
  * [Input] Consume the sidebar shell in `pc/src/App.jsx`[Pos], plus the setup and dashboard flows rendered below it.
- * [Output] Provide the token-driven Pet Manager visual language, including unified page/card/control/modal primitives, a semantic shared Button hierarchy, USB-only first-run and dashboard status surfaces without Wi-Fi configuration chrome, first-visit page onboarding with compact reopenable quick-start dialogs, a unified Component Center library whose cards own device sync/removal state, keep type filters in a compact row below title actions, and show concise mapping-aware game instructions while pixel styling remains inside widget previews, a compact step-based device guide with hardware-shaped cues, a responsive centralized API-configuration workspace with official credential links and provider-readiness strips, the preview-first appearance workspace, editable per-component button mappings with compact/mobile layouts, image-first grouped Linux/P4 hardware controls with shared voice enablement, compact Agent rows, responsive shell/context navigation with inline firmware-update states, and a high-density voice command bar with API readiness, diagnostics, and platform-specific foreground-input recovery tips.
+ * [Output] Provide the token-driven Apple-flavored visual language with light and dark palettes (lib/theme.js sets data-theme), translucent sidebar material, unified page/card/control/modal primitives, a semantic shared Button hierarchy, USB-only first-run and dashboard status surfaces without Wi-Fi configuration chrome, first-visit page onboarding with compact reopenable quick-start dialogs, a unified Component Center library whose cards own device sync/removal state, keep type filters in a compact row below title actions, and show concise mapping-aware game instructions while pixel styling remains inside widget previews, a compact step-based device guide with hardware-shaped cues, a responsive centralized API-configuration workspace with official credential links and provider-readiness strips, the preview-first appearance workspace, editable per-component button mappings with compact/mobile layouts, image-first grouped Linux/P4 hardware controls with shared voice enablement, compact Agent rows, responsive shell/context navigation with inline firmware-update states, and a high-density voice command bar with API readiness, diagnostics, and platform-specific foreground-input recovery tips.
  * [Pos] style node in pc/src
  * [Sync] If this file changes, update this header and `pc/src/.folder.md`.
  */
@@ -8,9 +8,10 @@
 :root {
   color-scheme: light;
 
-  /* Typography */
+  /* Typography — MiSans leads the CJK-dominant UI; add a YaHei fallback. */
   --font-sans: "MiSans", "HarmonyOS Sans SC", "PingFang SC", "Noto Sans CJK SC",
-    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+    "Microsoft YaHei UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Menlo", "Cascadia Mono", "Source Code Pro", monospace;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
@@ -27,41 +28,48 @@
   --line-height-base: 1.5;
   --line-height-relaxed: 1.65;
 
-  /* Canvas and surfaces */
-  --bg: #f7f8fa;
-  --bg-soft: #fbfbfc;
+  /* Canvas and surfaces — Apple web grays */
+  --bg: #f5f5f7;
+  --bg-soft: #fafafc;
   --surface: #ffffff;
-  --surface-muted: #f4f5f7;
+  --surface-muted: #f2f2f7;
   --surface-elevated: #ffffff;
-  --surface-sunken: #eef0f3;
+  --surface-sunken: #e9e9ee;
   --media-bg: #050607;
-  --backdrop: rgba(20, 21, 26, 0.48);
+  --backdrop: rgba(10, 10, 12, 0.42);
 
-  --line: #e6e7eb;
-  --line-soft: #eff0f3;
-  --line-strong: #d8dadf;
+  --line: #e4e4e9;
+  --line-soft: #ececf1;
+  --line-strong: #d5d5da;
 
-  --text: #14151a;
-  --text-soft: #4b5060;
-  --text-muted: #7c818d;
-  --text-faint: #a4a8b1;
+  --text: #1d1d1f;
+  --text-soft: #48484a;
+  --text-muted: #6e6e73;
+  --text-faint: #aeaeb2;
   --text-on-accent: #ffffff;
 
-  --accent: #ff6700;
-  --accent-strong: #e25600;
-  --accent-soft: #fff1e6;
-  --accent-ring: rgba(255, 103, 0, 0.18);
+  /* Brand accent sampled from the HachimiDock mark: bright orange body,
+     deep orange ring, cream face. Orange stays on interactive/active elements. */
+  --accent: #f1740a;
+  --accent-strong: #c25508;
+  --accent-soft: #fff3e6;
+  --accent-ring: rgba(241, 116, 10, 0.22);
 
-  --success: #15a466;
-  --success-soft: #e6f6ed;
-  --info: #2576cb;
-  --info-soft: #e6f0fa;
-  --warning: #c97a17;
-  --warning-soft: #fbf1de;
-  --danger: #d24a3d;
-  --danger-soft: #fae8e6;
-  --neutral: #8a8f99;
-  --neutral-soft: #eef0f2;
+  --success: #248a3d;
+  --success-soft: #e6f5ea;
+  --info: #0071e3;
+  --info-soft: #e8f1fd;
+  --warning: #b25000;
+  --warning-soft: #fdf1de;
+  --danger: #d70015;
+  --danger-soft: #fbe9e9;
+  --neutral: #8e8e93;
+  --neutral-soft: var(--neutral-soft);
+
+  /* Translucent chrome materials; degrade to solid under reduced transparency. */
+  --sidebar-material: rgba(246, 246, 248, 0.82);
+  --material-blur: 24px;
+  --material-saturate: 180%;
 
   /* Geometry and rhythm */
   --space-1: 4px;
@@ -84,8 +92,8 @@
 
   --shadow-xs: 0 1px 2px rgba(20, 21, 26, 0.04);
   --shadow-sm: 0 1px 3px rgba(20, 21, 26, 0.06), 0 1px 2px rgba(20, 21, 26, 0.04);
-  --shadow-md: 0 4px 12px rgba(20, 21, 26, 0.06), 0 2px 4px rgba(20, 21, 26, 0.04);
-  --shadow-lg: 0 12px 32px rgba(20, 21, 26, 0.08), 0 4px 12px rgba(20, 21, 26, 0.04);
+  --shadow-md: 0 4px 14px rgba(20, 21, 26, 0.07), 0 2px 4px rgba(20, 21, 26, 0.04);
+  --shadow-lg: 0 12px 34px rgba(20, 21, 26, 0.1), 0 4px 12px rgba(20, 21, 26, 0.05);
 
   /* Layout, motion and stacking */
   --sidebar-width: 240px;
@@ -94,9 +102,11 @@
   --page-padding-inline: clamp(16px, 2.5vw, 32px);
   --page-padding-block-start: 24px;
   --page-padding-block-end: 40px;
-  --motion-fast: 140ms;
-  --motion-standard: 180ms;
+  --motion-fast: 120ms;
+  --motion-standard: 200ms;
+  --motion-slow: 320ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
   --focus-ring: 0 0 0 4px var(--accent-ring);
   --disabled-opacity: 0.52;
   --z-modal: 1000;
@@ -105,6 +115,66 @@
   /* Compatibility aliases for legacy surfaces while they migrate to tokens. */
   --bg-card: var(--surface);
   --border: var(--line);
+}
+
+/* Dark theme — lib/theme.js resolves "auto/light/dark" and sets data-theme.
+   Token names stay identical so components inherit both palettes. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #1c1c1e;
+  --bg-soft: #212124;
+  --surface: #2c2c2e;
+  --surface-muted: #323236;
+  --surface-elevated: #3a3a3e;
+  --surface-sunken: #121214;
+  --media-bg: #000000;
+  --backdrop: rgba(0, 0, 0, 0.55);
+
+  --line: #3b3b40;
+  --line-soft: #333338;
+  --line-strong: #4c4c52;
+
+  --text: #f5f5f7;
+  --text-soft: #cfcfd4;
+  --text-muted: #98989e;
+  --text-faint: #6c6c71;
+  --text-on-accent: #ffffff;
+
+  --accent: #ff9a1f;
+  --accent-strong: #ffb340;
+  --accent-soft: #3d2a14;
+  --accent-ring: rgba(255, 154, 31, 0.28);
+
+  --success: #30d158;
+  --success-soft: #1e3524;
+  --info: #409cff;
+  --info-soft: #16293e;
+  --warning: #ffb340;
+  --warning-soft: #3a2e14;
+  --danger: #ff453a;
+  --danger-soft: #3e1d1d;
+  --neutral: #98989e;
+  --neutral-soft: #2e2e32;
+
+  --sidebar-material: rgba(24, 24, 26, 0.78);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 34px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --sidebar-material: var(--bg);
+    --material-blur: 0px;
+    --material-saturate: 100%;
+  }
+
+  :root[data-theme="dark"] {
+    --sidebar-material: #1c1c1e;
+  }
 }
 
 /* === shell ============================================================ */
@@ -279,7 +349,7 @@ body {
   font-size: var(--font-size-base);
   color: var(--text);
   background:
-    radial-gradient(circle at top left, rgba(255, 103, 0, 0.045), transparent 24%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 4.5%, transparent), transparent 24%),
     linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 100%);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -464,7 +534,7 @@ select:focus-visible {
 
 .app-shell.wizard-mode {
   background:
-    linear-gradient(180deg, #fcfcfd 0%, var(--bg-soft) 100%);
+    linear-gradient(180deg, var(--surface) 0%, var(--bg-soft) 100%);
 }
 
 .app-layout {
@@ -484,7 +554,9 @@ select:focus-visible {
   height: 100vh;
   padding: 16px 12px;
   overflow-y: auto;
-  background: var(--surface);
+  background: var(--sidebar-material);
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
   border-right: 1px solid var(--line);
   min-width: 0;
 }
@@ -524,7 +596,8 @@ select:focus-visible {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  background: var(--accent);
+  /* The HachimiDock mark carries its own squircle and colors. */
+  background: transparent;
   color: var(--text-on-accent);
   flex-shrink: 0;
   overflow: hidden;
@@ -594,8 +667,9 @@ select:focus-visible {
 
 .sidebar-nav-button.active,
 .sidebar-nav__item.is-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: var(--font-weight-semibold);
 }
 
 .sidebar-nav-button:disabled,
@@ -721,7 +795,7 @@ select:focus-visible {
   display: block;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: #f9fafb;
+  background: var(--surface-muted);
   border: 1px solid var(--line-soft);
   color: var(--text-soft);
   font-size: 0.8rem;
@@ -823,7 +897,7 @@ select:focus-visible {
 }
 
 .page-badge--accent {
-  border-color: rgba(255, 103, 0, 0.18);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -858,7 +932,7 @@ select:focus-visible {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 103, 0, 0.14);
+  border: 2px solid color-mix(in srgb, var(--accent) 14%, transparent);
   border-top-color: var(--accent);
   animation: spin 0.9s linear infinite;
 }
@@ -869,8 +943,8 @@ select:focus-visible {
   place-items: center;
   padding: 32px 16px;
   background:
-    radial-gradient(1200px 600px at 20% -10%, rgba(255, 103, 0, 0.1), transparent 60%),
-    radial-gradient(800px 600px at 100% 100%, rgba(21, 164, 102, 0.06), transparent 60%),
+    radial-gradient(1200px 600px at 20% -10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+    radial-gradient(800px 600px at 100% 100%, color-mix(in srgb, var(--success) 6%, transparent), transparent 60%),
     var(--bg);
 }
 
@@ -949,7 +1023,7 @@ select:focus-visible {
 .btn-primary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled),
 .btn-ghost:hover:not(:disabled) {
-  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
 }
 
 .button:disabled,
@@ -960,16 +1034,20 @@ select:focus-visible {
   transform: none;
 }
 
-.button:active:not(:disabled) {
-  transform: translateY(0);
+/* Apple-style press: acknowledge on pointer-down with a quick scale. */
+.button:active:not(:disabled),
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled),
+.btn-ghost:active:not(:disabled) {
+  transform: scale(0.97);
   box-shadow: none;
+  transition-duration: 80ms;
 }
 
 .button--primary,
 .btn-primary {
   background: var(--accent);
   color: var(--text-on-accent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .button--primary:hover:not(:disabled),
@@ -1015,7 +1093,7 @@ select:focus-visible {
 .button--danger:hover:not(:disabled),
 .btn-ghost.danger:hover:not(:disabled) {
   background: var(--danger-soft);
-  border-color: rgba(210, 74, 61, 0.2);
+  border-color: color-mix(in srgb, var(--danger) 20%, transparent);
 }
 
 .button--icon {
@@ -1172,7 +1250,7 @@ select:focus-visible {
 }
 
 .ui-control-shell:focus-within {
-  border-color: rgba(255, 103, 0, 0.55);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: var(--focus-ring);
 }
 
@@ -1204,7 +1282,7 @@ select:focus-visible {
 
 .ui-control:focus-visible {
   outline: none;
-  border-color: rgba(255, 103, 0, 0.55);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: var(--focus-ring);
 }
 
@@ -1640,7 +1718,7 @@ select:focus-visible {
 
 .status-pill--success,
 .status-pill-success {
-  border-color: rgba(21, 164, 102, 0.16);
+  border-color: color-mix(in srgb, var(--success) 16%, transparent);
   background: var(--success-soft);
   color: var(--success);
 }
@@ -1685,7 +1763,7 @@ select:focus-visible {
 
 .message-banner--success {
   background: var(--success-soft);
-  border-color: rgba(21, 164, 102, 0.16);
+  border-color: color-mix(in srgb, var(--success) 16%, transparent);
   color: var(--success);
 }
 
@@ -1697,7 +1775,7 @@ select:focus-visible {
 
 .message-banner--error {
   background: var(--danger-soft);
-  border-color: rgba(210, 74, 61, 0.18);
+  border-color: color-mix(in srgb, var(--danger) 18%, transparent);
   color: var(--danger);
 }
 
@@ -2038,13 +2116,13 @@ select:focus-visible {
 }
 
 .voice-status-chip--ready {
-  border-color: rgba(21, 164, 102, 0.16);
+  border-color: color-mix(in srgb, var(--success) 16%, transparent);
   background: var(--success-soft);
   color: var(--success);
 }
 
 .voice-status-chip--blocked {
-  border-color: rgba(210, 74, 61, 0.18);
+  border-color: color-mix(in srgb, var(--danger) 18%, transparent);
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -2091,7 +2169,7 @@ select:focus-visible {
 
 .voice-audio-state--active,
 .voice-audio-state--ready {
-  border-color: rgba(21, 164, 102, 0.16);
+  border-color: color-mix(in srgb, var(--success) 16%, transparent);
   background: var(--success-soft);
 }
 
@@ -2101,7 +2179,7 @@ select:focus-visible {
 }
 
 .voice-audio-state--blocked {
-  border-color: rgba(210, 74, 61, 0.18);
+  border-color: color-mix(in srgb, var(--danger) 18%, transparent);
   background: var(--danger-soft);
 }
 
@@ -2134,7 +2212,7 @@ select:focus-visible {
 }
 
 .voice-session-select-shell:focus-within {
-  border-color: rgba(255, 103, 0, 0.72);
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
@@ -2272,7 +2350,7 @@ select:focus-visible {
 }
 
 .voice-button-action-value:focus-visible {
-  border-color: rgba(255, 103, 0, 0.72);
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
   box-shadow: 0 0 0 3px var(--accent-ring);
   outline: none;
 }
@@ -2313,7 +2391,7 @@ select:focus-visible {
 }
 
 .voice-button-action-select-shell:focus-within {
-  border-color: rgba(255, 103, 0, 0.72);
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
@@ -2367,7 +2445,7 @@ select:focus-visible {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 11px;
-  border: 1px solid rgba(255, 103, 0, 0.16);
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
 }
@@ -2475,7 +2553,7 @@ select:focus-visible {
 .board-button-map__encoder.is-active {
   stroke: var(--accent);
   stroke-width: 5;
-  filter: drop-shadow(0 0 8px rgba(255, 103, 0, 0.32));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 32%, transparent));
 }
 
 .board-button-map__speaker-hole {
@@ -2484,7 +2562,7 @@ select:focus-visible {
 
 .board-button-map__callout {
   fill: none;
-  stroke: rgba(255, 103, 0, 0.5);
+  stroke: color-mix(in srgb, var(--accent) 50%, transparent);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-dasharray: 4 4;
@@ -2530,7 +2608,7 @@ select:focus-visible {
 .voice-config-apply-btn.is-dirty {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 0 0 3px rgba(255, 103, 0, 0.26);
+    0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .voice-config-message {
@@ -3281,12 +3359,12 @@ select:focus-visible {
 
 .agent-item:hover {
   border-color: var(--line-strong);
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .agent-item--enabled {
-  border-color: rgba(255, 103, 0, 0.18);
-  background: linear-gradient(180deg, #fffaf7 0%, var(--surface) 100%);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%, var(--surface) 100%);
   box-shadow: var(--shadow-xs);
 }
 
@@ -3381,7 +3459,7 @@ select:focus-visible {
   gap: 10px;
   justify-content: space-between;
   padding: 20px;
-  border: 1px solid rgba(255, 103, 0, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: var(--radius-lg);
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -3393,7 +3471,7 @@ select:focus-visible {
 }
 
 .component-center-promise span {
-  color: #8a3b00;
+  color: var(--accent-strong);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -3535,7 +3613,7 @@ select:focus-visible {
   gap: 12px;
   align-items: center;
   padding: 14px;
-  border: 1px solid rgba(255, 103, 0, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -3560,8 +3638,8 @@ select:focus-visible {
 }
 
 .component-store-search textarea:focus-visible {
-  border-color: rgba(255, 103, 0, 0.42);
-  box-shadow: 0 0 0 3px rgba(255, 103, 0, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .component-store-search > div {
@@ -3613,8 +3691,8 @@ select:focus-visible {
 
 .component-store-card:hover,
 .component-store-card.is-selected {
-  border-color: rgba(255, 103, 0, 0.38);
-  box-shadow: 0 10px 28px rgba(255, 103, 0, 0.1);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--accent) 10%, transparent);
   transform: translateY(-1px);
 }
 
@@ -3851,7 +3929,7 @@ select:focus-visible {
   gap: 16px;
   align-items: center;
   padding: 20px;
-  border: 1px solid rgba(255, 103, 0, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: var(--radius-lg);
   background:
     linear-gradient(135deg, rgba(255, 241, 230, 0.95), rgba(255, 255, 255, 0.98) 56%),
@@ -3911,7 +3989,7 @@ select:focus-visible {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .component-community-grid article > div {
@@ -3959,8 +4037,8 @@ select:focus-visible {
 }
 
 .component-prompt-builder textarea:focus-visible {
-  border-color: rgba(255, 103, 0, 0.42);
-  box-shadow: 0 0 0 3px rgba(255, 103, 0, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .component-prompt-actions {
@@ -4048,7 +4126,7 @@ select:focus-visible {
   padding: 7px 9px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  background: #f9fafb;
+  background: var(--surface-muted);
   color: var(--text-soft);
   font-size: 11px;
   word-break: break-all;
@@ -4083,7 +4161,7 @@ select:focus-visible {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .component-preview-cards span {
@@ -4120,7 +4198,7 @@ select:focus-visible {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .component-package-file-grid svg {
@@ -4253,7 +4331,7 @@ select:focus-visible {
   padding: 16px;
   border: 1px solid rgba(255, 149, 0, 0.28);
   border-radius: var(--radius-lg);
-  background: #fff8ed;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
 }
 
 .component-replace-warning > div:first-child {
@@ -4323,7 +4401,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .component-fit-panel article strong,
@@ -4361,7 +4439,7 @@ select:focus-visible {
   padding: 9px 10px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .component-optional-section {
@@ -4448,13 +4526,13 @@ select:focus-visible {
 .component-package-card.is-selected {
   transform: translateY(-1px);
   border-color: var(--line-strong);
-  background: #fcfcfd;
+  background: var(--bg-soft);
   box-shadow: var(--shadow-xs);
 }
 
 .component-package-card.is-selected {
-  border-color: rgba(255, 103, 0, 0.34);
-  background: linear-gradient(180deg, #fffaf7 0%, var(--surface) 100%);
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--surface)) 0%, var(--surface) 100%);
 }
 
 .component-package-card__icon {
@@ -4483,7 +4561,7 @@ select:focus-visible {
 }
 
 .component-package-card--purple .component-package-card__icon {
-  background: #f1ebff;
+  background: color-mix(in srgb, #6e4ac7 14%, var(--surface));
   color: #6e4ac7;
 }
 
@@ -4555,7 +4633,7 @@ select:focus-visible {
 .component-region-list code,
 .component-binding-card code {
   border-radius: var(--radius-sm);
-  background: #f9fafb;
+  background: var(--surface-muted);
   border: 1px solid var(--line-soft);
   color: var(--text-soft);
 }
@@ -4697,7 +4775,7 @@ select:focus-visible {
 }
 
 .control-choice-row button.is-selected {
-  border-color: rgba(255, 103, 0, 0.26);
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-weight: 600;
@@ -4707,7 +4785,7 @@ select:focus-visible {
   display: grid;
   gap: 10px;
   padding: 16px;
-  border: 1px solid rgba(255, 103, 0, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: var(--radius-md);
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -4720,7 +4798,7 @@ select:focus-visible {
 
 .component-upload-card p {
   margin: 0;
-  color: #8a3b00;
+  color: var(--accent-strong);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -4865,7 +4943,7 @@ select:focus-visible {
 }
 
 .hardware-control-card.is-selected {
-  border-color: rgba(255, 103, 0, 0.32);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -4953,7 +5031,7 @@ select:focus-visible {
 
 .component-flow-grid article {
   padding: 13px;
-  background: #fcfcfd;
+  background: var(--bg-soft);
 }
 
 .component-package-includes {
@@ -5166,8 +5244,8 @@ select:focus-visible {
 
 .desktop-pet-channel-card.is-selected {
   border-color: var(--accent);
-  background: #fffaf5;
-  box-shadow: 0 0 0 2px rgba(255, 103, 0, 0.08);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .desktop-pet-channel-card.is-disabled:not(.is-selected) {
@@ -5190,7 +5268,7 @@ select:focus-visible {
 }
 
 .desktop-pet-channel-card__trigger:hover {
-  background: rgba(255, 103, 0, 0.035);
+  background: color-mix(in srgb, var(--accent) 3.5%, transparent);
 }
 
 .desktop-pet-channel-expanded {
@@ -5466,7 +5544,7 @@ select:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background:
-    linear-gradient(180deg, #ffffff 0%, #fbfbfc 100%),
+    linear-gradient(180deg, #ffffff 0%, var(--bg-soft) 100%),
     var(--surface);
   color: var(--text);
   padding: 0 11px 0 12px;
@@ -5733,19 +5811,19 @@ select:focus-visible {
 }
 
 .setup-agent-channel-card:hover {
-  border-color: rgba(255, 103, 0, 0.32);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
   background: var(--bg-soft);
 }
 
 .setup-agent-channel-card:focus-visible {
-  border-color: rgba(255, 103, 0, 0.55);
-  box-shadow: 0 0 0 3px rgba(255, 103, 0, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
   outline: none;
 }
 
 .setup-agent-channel-card.is-selected {
-  border-color: rgba(255, 103, 0, 0.55);
-  background: #fffaf5;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
 }
 
 .setup-agent-channel-card__icon {
@@ -5885,7 +5963,7 @@ select:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   appearance: none;
-  background: linear-gradient(180deg, #fff 0%, #fbfbfc 100%);
+  background: linear-gradient(180deg, #fff 0%, var(--bg-soft) 100%);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -5893,8 +5971,8 @@ select:focus-visible {
 }
 
 .setup-agent-appearance-select select:focus {
-  border-color: rgba(255, 103, 0, 0.5);
-  box-shadow: 0 0 0 3px rgba(255, 103, 0, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* Setup */
@@ -6189,7 +6267,7 @@ select:focus-visible {
 }
 
 .setup-method-card--ethernet {
-  border-color: rgba(21, 164, 102, 0.18);
+  border-color: color-mix(in srgb, var(--success) 18%, transparent);
 }
 
 .wizard-card--compact .wizard-card-head {
@@ -6366,7 +6444,7 @@ select:focus-visible {
   padding: 14px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
-  background: #fafbfc;
+  background: var(--bg-soft);
 }
 
 .setup-info-item__label {
@@ -6412,13 +6490,13 @@ select:focus-visible {
 }
 
 .setup-steps__item--done {
-  border-color: rgba(21, 164, 102, 0.16);
+  border-color: color-mix(in srgb, var(--success) 16%, transparent);
   background: var(--success-soft);
   color: var(--success);
 }
 
 .setup-steps__item--active {
-  border-color: rgba(255, 103, 0, 0.18);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -6575,7 +6653,7 @@ select:focus-visible {
   height: 20px;
   padding: 0 6px;
   border-radius: var(--radius-sm);
-  background: rgba(210, 74, 61, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   font-size: 11px;
   font-weight: 700;
@@ -6762,7 +6840,7 @@ select:focus-visible {
 
 .field-input:focus-visible,
 .field__input:focus-visible {
-  border-color: rgba(255, 103, 0, 0.42);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .field-helper {
@@ -6806,7 +6884,7 @@ select:focus-visible {
 
 .setup-result {
   margin: 18px 0 0;
-  border: 1px solid rgba(21, 164, 102, 0.16);
+  border: 1px solid color-mix(in srgb, var(--success) 16%, transparent);
   border-radius: var(--radius-lg);
   background: var(--success-soft);
   overflow: hidden;
@@ -6821,25 +6899,25 @@ select:focus-visible {
 }
 
 .setup-result__row + .setup-result__row {
-  border-top: 1px solid rgba(21, 164, 102, 0.12);
+  border-top: 1px solid color-mix(in srgb, var(--success) 12%, transparent);
 }
 
 .setup-result__row span {
-  color: #1c7c50;
+  color: var(--success);
 }
 
 .setup-result__row strong {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #166641;
+  color: var(--success);
   text-align: right;
 }
 
 .setup-error-detail {
   margin-top: 16px;
   padding: 14px 16px;
-  border: 1px solid rgba(210, 74, 61, 0.18);
+  border: 1px solid color-mix(in srgb, var(--danger) 18%, transparent);
   border-radius: var(--radius-md);
   background: var(--danger-soft);
   color: var(--danger);
@@ -7733,7 +7811,7 @@ select:focus-visible {
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  border: 1px solid rgba(255, 103, 0, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(255, 241, 230, 0.92), rgba(255, 255, 255, 0.96));
 }
@@ -7756,7 +7834,7 @@ select:focus-visible {
   height: 7px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 103, 0, 0.14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .ca-inline-progress__bar span {
@@ -7764,7 +7842,7 @@ select:focus-visible {
   height: 100%;
   min-width: 8px;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), #ff9a55);
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 65%, white));
   transition: width 0.28s ease;
 }
 
@@ -7775,7 +7853,7 @@ select:focus-visible {
 }
 
 .ca-inline-progress.is-complete {
-  border-color: rgba(21, 164, 102, 0.2);
+  border-color: color-mix(in srgb, var(--success) 20%, transparent);
   background: var(--success-soft);
 }
 
@@ -7784,7 +7862,7 @@ select:focus-visible {
 }
 
 .ca-inline-progress.is-complete .ca-inline-progress__bar {
-  background: rgba(21, 164, 102, 0.16);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
 }
 
 .ca-inline-progress.is-complete .ca-inline-progress__bar span {
@@ -8212,7 +8290,7 @@ select:focus-visible {
   justify-content: center;
   gap: var(--space-2);
   padding: 0 var(--space-4);
-  border: 1px solid rgba(255, 103, 0, 0.22);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: var(--radius-md);
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -8228,7 +8306,7 @@ select:focus-visible {
 }
 
 .detail-state-regenerate-entry__cta:hover:not(:disabled) {
-  border-color: rgba(255, 103, 0, 0.38);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
   box-shadow: 0 8px 18px rgba(255, 95, 21, 0.14);
 }
@@ -8341,8 +8419,8 @@ select:focus-visible {
 
 .state-card__thumb--failed {
   color: var(--danger);
-  background: rgba(210, 74, 61, 0.08);
-  border-color: rgba(210, 74, 61, 0.18);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
 .state-card__media {
@@ -9048,7 +9126,7 @@ select:focus-visible {
   gap: 10px;
   padding: 12px 14px;
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(21, 164, 102, 0.18);
+  border: 1px solid color-mix(in srgb, var(--success) 18%, transparent);
   background: var(--success-soft);
   margin-bottom: 12px;
 }
@@ -9202,10 +9280,10 @@ select:focus-visible {
   box-shadow: var(--shadow-lg);
 }
 .toast--success {
-  border-left: 3px solid #16a34a;
+  border-left: 3px solid var(--success);
 }
 .toast--error {
-  border-left: 3px solid #dc2626;
+  border-left: 3px solid var(--danger);
 }
 .toast__head {
   display: flex;
@@ -10490,13 +10568,13 @@ select:focus-visible {
   transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 .builtin-card:hover {
-  border-color: rgba(255, 103, 0, 0.32);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.05);
   transform: translateY(-1px);
 }
 .builtin-card.is-selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-ring), 0 8px 24px rgba(255, 103, 0, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-ring), 0 8px 24px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .builtin-card.is-active::before {
   content: "";
@@ -11174,7 +11252,7 @@ select:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(145deg, rgba(255, 103, 0, 0.045), transparent 62%),
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 4.5%, transparent), transparent 62%),
     var(--surface-muted);
 }
 
@@ -11183,7 +11261,7 @@ select:focus-visible {
   width: 26px;
   height: 26px;
   place-items: center;
-  border: 1px solid rgba(255, 103, 0, 0.24);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -12241,7 +12319,7 @@ select:focus-visible {
 .board-button-control-glyph.is-active .board-button-control-glyph__encoder {
   stroke: var(--accent);
   stroke-width: 3;
-  filter: drop-shadow(0 0 7px rgba(255, 103, 0, 0.28));
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 28%, transparent));
 }
 
 .board-button-control-field {
@@ -12689,8 +12767,8 @@ select:focus-visible {
 
 .now-showing-hero__chip--active {
   background: var(--success-soft, rgba(34, 197, 94, 0.12));
-  color: var(--success, #16a34a);
-  border-color: var(--success, #16a34a);
+  color: var(--success, var(--success));
+  border-color: var(--success, var(--success));
 }
 
 .now-showing-hero__chip--unverified {
@@ -14547,7 +14625,7 @@ select:focus-visible {
   margin: 2px 0 14px;
   width: fit-content;
   max-width: 100%;
-  background: var(--surface-sunken, #eef0f3);
+  background: var(--surface-sunken, var(--surface-sunken));
   border-radius: 9px;
 }
 
@@ -14587,7 +14665,7 @@ select:focus-visible {
 }
 
 .api-settings__segment:focus-visible {
-  outline: 2px solid var(--accent, #ff6700);
+  outline: 2px solid var(--accent, var(--accent));
   outline-offset: 2px;
 }
 

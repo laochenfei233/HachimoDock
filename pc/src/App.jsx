@@ -33,7 +33,7 @@ import {
   acknowledgeGenerationTask,
   subscribeGenerationTask,
 } from "./lib/generation-task.js";
-import petManagerMark from "./assets/logo/pet-manager-mark.svg";
+import hachimodockMark from "./assets/logo/hachimodock-mark.png";
 import { version as clientVersion } from "../package.json";
 import { initializeProviderConfigs } from "./lib/avatar-pipeline/provider-config.js";
 import { loadDesktopStartup } from "./lib/desktop-startup.js";
@@ -302,7 +302,7 @@ function AppInner({
           <div className="sidebar-head">
             <div className="sidebar-brand">
               <span className="sidebar-brand__mark">
-                <img src={petManagerMark} alt="" />
+                <img src={hachimodockMark} alt="" />
               </span>
               <span className="sidebar-brand__copy">
                 <strong className="sidebar-brand-name">HachimiDock</strong>
