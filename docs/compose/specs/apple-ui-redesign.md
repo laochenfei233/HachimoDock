@@ -3,7 +3,7 @@ feature: apple-ui-redesign
 status: delivered
 updated: 2026-11-18
 branch: feat/apple-ui-redesign
-commits: 2ce63a5..3b2a316
+commits: 2ce63a5..69de427
 ---
 
 # Apple 风格前端重设计 + 全套 Logo 替换
@@ -21,6 +21,7 @@ commits: 2ce63a5..3b2a316
 - `prefers-reduced-transparency` 里 `:root` 重置打不过 `:root[data-theme="dark"]`（0,1,0 vs 0,2,0），深色降级必须在 media query 内另开 dark 子块。
 - 项目里存在引用未定义 token 的死代码（--text-primary 等 5 处靠浅色 fallback 活了很久，深色立刻不可读）。
 - 每页有自己的首次引导弹窗挡 Playwright 点击，导航点击前后都要尝试关闭"知道了"。
+- **内联 style 会碾压一切 CSS spacing 调优**：fieldset 的 inline `padding:0` 让该区块的 CSS 内边距从未生效（Playwright computed style 实测 padding-left 0px、标签距卡边 1px 才定位到根因）。教训：调间距没效果时先查内联样式；用 computed style 探针验证，别只看截图猜。
 - 再次确认：`npm test` 只按文本读源码，JSX 语法问题必须 `npm run build:web` 验证。
 
 ## [S1] Problem
@@ -66,6 +67,7 @@ commits: 2ce63a5..3b2a316
 - 玻璃材质 token：`--card-material`（浅 rgba(255,255,255,.78) / 深 rgba(44,44,46,.72)，**无 blur**——backdrop-filter 祖先会困住 fixed 弹窗）、`--modal-material`（更实，blur 60px）、`--glass-blur`、`--card-edge-highlight` 顶部镜面内高光；画布加环境光晕（accent/info 低透明度径向渐变，fixed）供玻璃漫射；blur 只上侧边栏/弹窗/toast 四个 chrome 浮层。
 - 空气感：卡片 header/body 内边距抬档（20/24）、页面 gap 20；provider 头/字段/脚注内边距放宽（16-20px）。
 - provider 卡片竖排（用户拍板）：一行一家全宽卡（grid 单列），卡内字段改横向 auto-fill 网格（minmax(250px,1fr)）保持卡片紧凑；900px/620px 媒体块简化（奇偶修补规则删除，620px 字段收敛单列）。
+- provider 切换分段化（用户拍板「用图2 的方式切换」）：形象生成卡新增 火山引擎/可灵/其他兼容 分段控件（radiogroup，aria-checked），只渲染选中服务商的表单；草稿按 provider 存于 videoConfigs，切换不丢。字段与脚注左缘对齐头部标题列（calc(16+36+12)=64px，620px 收敛 16px）。
 - 输入框改 iOS 填充式：`--surface-muted` 填充 + 无边框 + 聚焦 accent 描边。
 - 主按钮：顶部镜面内高光 + accent 着色投影，hover 增强。
 - `prefers-reduced-transparency` 浅深两套全量退化（blur 0 + 实色材质）。
