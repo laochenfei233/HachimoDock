@@ -1675,7 +1675,6 @@ select:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-
   .api-settings__overview {
     grid-template-columns: 44px minmax(0, 1fr);
   }
@@ -8590,6 +8589,7 @@ select:focus-visible {
   z-index: var(--z-modal);
   padding: var(--space-6);
   backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   animation: modal-backdrop-in var(--motion-fast) var(--ease-standard);
 }
 @keyframes modal-backdrop-in {

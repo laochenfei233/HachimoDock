@@ -1,9 +1,9 @@
 ---
 feature: apple-ui-redesign
 status: delivered
-updated: 2026-11-17
+updated: 2026-11-18
 branch: feat/apple-ui-redesign
-commits: 2ce63a5..3f07d41
+commits: 2ce63a5..3b2a316
 ---
 
 # Apple 风格前端重设计 + 全套 Logo 替换
@@ -64,7 +64,8 @@ commits: 2ce63a5..3f07d41
 
 - 圆角系统放宽：radius-sm 8 / md 12 / lg 16 / xl 20。
 - 玻璃材质 token：`--card-material`（浅 rgba(255,255,255,.78) / 深 rgba(44,44,46,.72)，**无 blur**——backdrop-filter 祖先会困住 fixed 弹窗）、`--modal-material`（更实，blur 60px）、`--glass-blur`、`--card-edge-highlight` 顶部镜面内高光；画布加环境光晕（accent/info 低透明度径向渐变，fixed）供玻璃漫射；blur 只上侧边栏/弹窗/toast 四个 chrome 浮层。
-- 空气感：卡片 header/body 内边距抬档（20/24）、页面 gap 20；provider 网格 gap 20 + `align-items: start`（强制等高与 min-height 238px 移除），provider 头/字段/脚注内边距放宽（16-20px）。
+- 空气感：卡片 header/body 内边距抬档（20/24）、页面 gap 20；provider 头/字段/脚注内边距放宽（16-20px）。
+- provider 卡片竖排（用户拍板）：一行一家全宽卡（grid 单列），卡内字段改横向 auto-fill 网格（minmax(250px,1fr)）保持卡片紧凑；900px/620px 媒体块简化（奇偶修补规则删除，620px 字段收敛单列）。
 - 输入框改 iOS 填充式：`--surface-muted` 填充 + 无边框 + 聚焦 accent 描边。
 - 主按钮：顶部镜面内高光 + accent 着色投影，hover 增强。
 - `prefers-reduced-transparency` 浅深两套全量退化（blur 0 + 实色材质）。
@@ -96,4 +97,4 @@ commits: 2ce63a5..3f07d41
 - [x] 设置页按新 IA 分组呈现，保存/草稿行为不变（ApiSettings 测试 18/18）
 - [x] 外观三态切换生效且持久化；reduced-motion/reduced-transparency（浅+深）降级可用
 - [x] provider 网格与卡片区无贴边挤压：卡间距 20px、字段离卡边 16-20px、无强制等高死空间（A2）
-- [x] A2 修订后 npm test / build:web 保持全绿并通过回审（A2-R2 APPROVE）
+- [x] A2 修订后 npm test / build:web 保持全绿并通过回审（A2-R2 APPROVE；竖排追加 3b2a316 复核亦 APPROVE）
