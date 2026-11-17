@@ -1,6 +1,6 @@
 /**
  * [Input] Shared avatar provider configs including persisted video parameters, native Volcengine ASR credential commands, per-provider ASR/TTS voice-chat status, the persisted appearance preference, and optional return navigation.
- * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), saved ASR changes are broadcast with save vs. test results distinguished, and an appearance group switches light/dark/auto theme in place.
+ * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), saved ASR changes are broadcast with save vs. test results distinguished, an appearance group switches light/dark/auto theme in place, and video-generation providers switch through one segmented control with per-provider drafts retained.
  * [Pos] top-level page node in pc/src
  * [Sync] If this file changes, update this header and `pc/src/.folder.md`.
  */
@@ -115,6 +115,8 @@ function AppearanceCard() {
 export default function ApiSettings({ onBack, configReadError = "", active = true }) {
   const usageHelp = useUsageHelp();
   const [showSecrets, setShowSecrets] = useState(false);
+  // 形象生成服务商分段切换：草稿按 provider 存在 videoConfigs 里，切换不丢。
+  const [activeVideoProvider, setActiveVideoProvider] = useState(VIDEO_PROVIDERS[0]?.id || "volcengine");
   const [videoConfigs, setVideoConfigs] = useState(loadVideoConfigs);
   const [savedVideoConfigs, setSavedVideoConfigs] = useState(() => videoConfigs);
   const [providerResults, setProviderResults] = useState({});
@@ -949,8 +951,22 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
 
       <Card title="形象生成" subtitle="用于新形象生成与单状态视频替换">
         <GenerationDiagnostics />
+        <div className="api-settings__segments" role="radiogroup" aria-label="形象生成服务商">
+          {VIDEO_PROVIDERS.map((provider) => (
+            <button
+              key={provider.id}
+              type="button"
+              role="radio"
+              aria-checked={activeVideoProvider === provider.id}
+              className={"api-settings__segment" + (activeVideoProvider === provider.id ? " is-active" : "")}
+              onClick={() => setActiveVideoProvider(provider.id)}
+            >
+              {provider.label}
+            </button>
+          ))}
+        </div>
         <div className="api-settings__provider-grid">
-          {VIDEO_PROVIDERS.map((provider) => {
+          {VIDEO_PROVIDERS.filter((provider) => provider.id === activeVideoProvider).map((provider) => {
             const config = videoConfigs[provider.id];
             const configured = providerCredentialsConfigured(provider.id, savedVideoConfigs[provider.id]);
             const result = providerResults[provider.id];
@@ -984,7 +1000,7 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
                   </span>
                 </header>
 
-                <fieldset className="api-settings__provider-fields" disabled={Boolean(configReadError)} style={{border:0,padding:0,margin:0,minWidth:0}}>
+                <fieldset className="api-settings__provider-fields" disabled={Boolean(configReadError)} style={{border:0,margin:0,minWidth:0}}>
                   {isKling ? (
                     <>
                       <label className="ui-field" htmlFor="api-settings-kling-access">

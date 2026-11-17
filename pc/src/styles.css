@@ -1591,7 +1591,8 @@ select:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: var(--space-4) var(--space-5);
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  /* Left edge follows the header title column: 16 head padding + 36 icon + 12 gap. */
+  padding: var(--space-4) var(--space-5) var(--space-5) calc(var(--space-4) + 36px + var(--space-3));
 }
 
 .api-settings__provider-foot {
@@ -1601,7 +1602,7 @@ select:focus-visible {
   gap: var(--space-2);
   min-height: 56px;
   margin-top: auto;
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-3) var(--space-4) var(--space-3) calc(var(--space-4) + 36px + var(--space-3));
   border-top: 1px solid var(--line-soft);
 }
 
@@ -1710,6 +1711,11 @@ select:focus-visible {
   .api-settings__provider-grid,
   .api-settings__provider-fields {
     grid-template-columns: 1fr;
+  }
+
+  .api-settings__provider-fields,
+  .api-settings__provider-foot {
+    padding-left: var(--space-4);
   }
 
   .api-settings__save {
