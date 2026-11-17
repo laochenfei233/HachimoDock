@@ -69,8 +69,14 @@
 
   /* Translucent chrome materials; degrade to solid under reduced transparency. */
   --sidebar-material: rgba(246, 246, 248, 0.82);
-  --material-blur: 24px;
+  --material-blur: 40px;
   --material-saturate: 180%;
+
+  /* Liquid Glass surfaces: translucent cards/modal over the ambient canvas. */
+  --card-material: rgba(255, 255, 255, 0.78);
+  --modal-material: rgba(255, 255, 255, 0.86);
+  --glass-blur: 24px;
+  --card-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 
   /* Geometry and rhythm */
   --space-1: 4px;
@@ -82,10 +88,10 @@
   --space-7: 32px;
   --space-8: 40px;
   --space-10: 48px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-pill: 999px;
   --control-height-sm: 34px;
   --control-height-md: 40px;
@@ -161,6 +167,10 @@
 
   --sidebar-material: rgba(24, 24, 26, 0.78);
 
+  --card-material: rgba(44, 44, 46, 0.72);
+  --modal-material: rgba(58, 58, 62, 0.86);
+  --card-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
@@ -170,7 +180,10 @@
 @media (prefers-reduced-transparency: reduce) {
   :root {
     --sidebar-material: var(--bg);
+    --card-material: var(--surface);
+    --modal-material: var(--surface-elevated);
     --material-blur: 0px;
+    --glass-blur: 0px;
     --material-saturate: 100%;
   }
 
@@ -195,7 +208,7 @@
 .page-shell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   padding: var(--page-padding-block-start) var(--page-padding-inline) var(--page-padding-block-end);
   max-width: var(--content-max-width);
   width: 100%;
@@ -271,10 +284,12 @@
 }
 
 .card {
-  background: var(--surface);
+  background: var(--card-material);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--card-edge-highlight), var(--shadow-sm);
   display: flex;
   flex-direction: column;
 }
@@ -284,7 +299,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -331,10 +346,10 @@
 }
 
 .card__body {
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: var(--space-5) var(--space-6) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .card__chevron {
@@ -361,9 +376,13 @@ body {
   font-family: var(--font-sans);
   font-size: var(--font-size-base);
   color: var(--text);
+  /* Ambient canvas washes give the glass surfaces something to diffuse. */
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 4.5%, transparent), transparent 24%),
+    radial-gradient(720px 480px at 12% -6%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+    radial-gradient(640px 520px at 108% 2%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 60%),
+    radial-gradient(900px 700px at 50% 120%, color-mix(in srgb, var(--info) 4%, transparent), transparent 62%),
     linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 100%);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -919,8 +938,10 @@ select:focus-visible {
 .setup-card,
 .loading-state {
   border: 1px solid var(--line);
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-sm);
+  background: var(--card-material);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  box-shadow: var(--card-edge-highlight), var(--shadow-sm);
   border-radius: var(--radius-xl);
 }
 
@@ -1061,11 +1082,17 @@ select:focus-visible {
 .btn-primary {
   background: var(--accent);
   color: var(--text-on-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 2px 8px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .button--primary:hover:not(:disabled),
 .btn-primary:hover:not(:disabled) {
   background: var(--accent-strong);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 3px 12px color-mix(in srgb, var(--accent) 36%, transparent);
 }
 
 .button--secondary,
@@ -1262,9 +1289,9 @@ select:focus-visible {
   align-items: center;
   min-height: var(--control-height-md);
   min-width: 0;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background: var(--surface-muted);
   transition:
     border-color var(--motion-fast) var(--ease-standard),
     box-shadow var(--motion-fast) var(--ease-standard),
@@ -1348,7 +1375,7 @@ select:focus-visible {
 
 .api-settings-page .page-shell__body { gap: 16px; }
 .api-settings-page .card__header { padding: 14px 20px; }
-.api-settings-page .card__body { padding: 12px 20px 16px; gap: 10px; }
+.api-settings-page .card__body { padding: var(--space-4) var(--space-6) var(--space-6); gap: var(--space-4); }
 .api-settings-page .card__subtitle { max-width: none; line-height: 1.65; }
 .api-settings-page .usage-help { margin: 0; padding-top: 10px; border-top: 1px solid var(--line-soft); }
 .api-settings-page .usage-help > p { margin: 0 0 3px; }
@@ -1371,8 +1398,10 @@ select:focus-visible {
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-xs);
+  background: var(--card-material);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  box-shadow: var(--card-edge-highlight), var(--shadow-xs);
 }
 
 .api-settings__overview-icon,
@@ -1482,7 +1511,7 @@ select:focus-visible {
 
 .api-settings__form {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
   align-items: end;
 }
 
@@ -1536,26 +1565,27 @@ select:focus-visible {
 .api-settings__provider-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  align-items: start;
+  gap: var(--space-5);
 }
 
 .api-settings__provider {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 238px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-xs);
 }
 
 .api-settings__provider-head {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  padding: 11px 12px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border-bottom: 1px solid var(--line-soft);
   background: var(--bg-soft);
 }
@@ -1563,8 +1593,8 @@ select:focus-visible {
 .api-settings__provider-fields {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: 12px;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-5);
 }
 
 .api-settings__provider-foot {
@@ -1572,9 +1602,9 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  min-height: 50px;
+  min-height: 56px;
   margin-top: auto;
-  padding: 9px 12px;
+  padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--line-soft);
 }
 
@@ -8585,11 +8615,13 @@ select:focus-visible {
   to { opacity: 1; }
 }
 .modal-card {
-  background: var(--surface);
+  background: var(--modal-material);
+  backdrop-filter: blur(60px) saturate(180%);
+  -webkit-backdrop-filter: blur(60px) saturate(180%);
   color: inherit;
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--card-edge-highlight), var(--shadow-lg);
   width: min(520px, 100%);
   max-height: calc(100vh - (var(--space-6) * 2));
   display: flex;
@@ -8606,11 +8638,11 @@ select:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--line);
 }
 .modal-body {
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: var(--space-5) var(--space-6) var(--space-6);
   overflow: auto;
 }
 .icon-btn {
@@ -9305,11 +9337,13 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--card-material);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border: 1px solid var(--line);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--card-edge-highlight), var(--shadow-lg);
 }
 .toast--success {
   border-left: 3px solid var(--success);
@@ -14654,7 +14688,7 @@ select:focus-visible {
   grid-auto-columns: 1fr;
   gap: 2px;
   padding: 3px;
-  margin: 2px 0 14px;
+  margin: 4px 0 18px;
   width: fit-content;
   max-width: 100%;
   background: var(--surface-sunken);
