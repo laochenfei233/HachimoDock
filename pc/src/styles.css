@@ -1560,10 +1560,10 @@ select:focus-visible {
 }
 
 .api-settings__provider-grid {
+  /* One provider per row; card heights follow their content. */
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
-  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
 }
 
 .api-settings__provider {
@@ -1588,9 +1588,9 @@ select:focus-visible {
 }
 
 .api-settings__provider-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: var(--space-4) var(--space-5);
   padding: var(--space-4) var(--space-5) var(--space-5);
 }
 
@@ -1672,17 +1672,9 @@ select:focus-visible {
 
 @media (max-width: 900px) {
   .api-settings__provider-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .api-settings__provider:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
-
-  .api-settings__provider:last-child:nth-child(odd) .api-settings__provider-fields {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   .api-settings__overview {
     grid-template-columns: 44px minmax(0, 1fr);
@@ -1716,16 +1708,9 @@ select:focus-visible {
   }
 
   .api-settings__form--asr,
-  .api-settings__provider-grid {
+  .api-settings__provider-grid,
+  .api-settings__provider-fields {
     grid-template-columns: 1fr;
-  }
-
-  .api-settings__provider:last-child:nth-child(odd) {
-    grid-column: 1;
-  }
-
-  .api-settings__provider:last-child:nth-child(odd) .api-settings__provider-fields {
-    display: flex;
   }
 
   .api-settings__save {
@@ -1773,7 +1758,7 @@ select:focus-visible {
 
 .status-pill--warning,
 .status-pill-warning {
-  border-color: rgba(201, 122, 23, 0.18);
+  border-color: color-mix(in srgb, var(--warning) 18%, transparent);
   background: var(--warning-soft);
   color: var(--warning);
 }
