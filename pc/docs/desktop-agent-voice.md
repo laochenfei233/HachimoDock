@@ -1,6 +1,6 @@
 # 实时对话桌面任务
 
-Pet 可把用户明确委托的桌面任务交给当前支持的桌面 Agent。当前适配器支持 ChatGPT（Codex）及 WorkBuddy；不把其他 Agent、网页聊天或独立 CLI 任务冒充为同一集成。
+Pet 可把用户明确委托的桌面任务交给当前支持的桌面 Agent。当前适配器支持 ChatGPT（Codex）、WorkBuddy、ZCode 及 Prism；不把其他 Agent、网页聊天或独立 CLI 任务冒充为同一集成。Prism 没有轮次回执：作曲器校验发送成功后只能确认「已接收」，完成结果请在 Prism 客户端核对。
 
 ## 输入与提交
 
