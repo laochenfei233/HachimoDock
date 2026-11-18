@@ -11,7 +11,7 @@
 | WorkBuddy | 独立 Hook 和会话状态 | macOS / Windows 当前可见输入框 | 追加语音草稿、确认发送及 Skill 安装；不读取私有历史数据库 |
 
 | DeepSeek Harness | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | 无需输入配对码；需在 DeepSeek 打开目标对话；输入不可用或目标不唯一时停止 |
-| Prism | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | prism-agent 使用同一桥接协议与独立 descriptor 目录（`~/.claw-pet/prism-bridge/`）；设备气泡选择会通过桥接切换其桌面对话，不抢占窗口焦点；语音与 DeepSeek Harness 同走系统辅助功能输入框适配器（一次性写入、确认键提交），桥接 `/inject` 保留为带回执的备用投递通道 |
+| Prism | 插件提供会话状态；与桌面输入通道独立 | macOS / Windows 当前可见输入框 | prism-agent 使用同一桥接协议与独立 descriptor 目录（`~/.claw-pet/prism-bridge/`）；设备气泡选择会通过桥接切换其桌面对话，不抢占窗口焦点；语音与 DeepSeek Harness 同走系统辅助功能输入框适配器（一次性写入、确认键提交），桥接 `/inject` 保留为带回执的备用投递通道；实时对话任务派发可用（作曲器校验发送），但 Prism 无轮次回执，只能确认已接收，完成结果请在 Prism 客户端查看 |
 | ZCode | 本地日志事件（turn/tool/model 生命周期）及独立会话显示 | macOS / Windows 可见输入框 | 状态来自 ZCode 桌面/CLI 的本地日志与会话存储；不含回复正文与 token 统计，无语音预览气泡；语音瞄准 ZCode 桌面 App 当前可见输入框，设备气泡选择只改跟随目标、不切换其桌面对话（`zcode://` 语义未验证，不做深链定位）；macOS 语音路径未实机验收 |
 
 ## 输入与确认
