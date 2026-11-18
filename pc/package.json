@@ -16,6 +16,7 @@
     "bundle:mac:local": "node scripts/bundle-macos-local-dmg.mjs",
     "verify:mac:local": "node scripts/sign-macos-local-app.mjs --verify-only",
     "build:win": "node scripts/prepare-desktop-resources.mjs --target windows && tauri build --target x86_64-pc-windows-msvc --bundles nsis,msi --ci",
+    "bundle:win:collect": "node scripts/collect-win-bundles.mjs",
     "build:win:portable": "node scripts/prepare-desktop-resources.mjs --target windows && tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle --ci",
     "bundle:win:cross": "node scripts/build-windows-nsis-cross.mjs",
     "build:web": "npm run check:public-build-env && vite build && npm run check:release-csp",
