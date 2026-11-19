@@ -35,3 +35,35 @@ bsp_display_brightness_set(100);
 | Touch | `espressif/esp_lcd_touch_gt911` |
 | Audio | `espressif/esp_codec_dev` |
 | SD card | ESP-IDF |
+
+The WLK2802MIPI-15P-V2 module is marked `ST7701S 1Lane MIPI` and the
+LCD connector exposes only D0 and the clock. Use one data lane at
+800 Mbps for this module, including when it is attached through its
+22-pin adapter connector. On the same device, a 550 Mbps single-lane
+test showed a stable image, while dual-lane tests at 500 and 550 Mbps
+left the LCD blank.
+
+For a module wired for two data lanes, select
+`CONFIG_BSP_LCD_DSI_DATA_LANES=2` only after checking both DSI data pairs
+through the adapter/FPC and confirming that the ST7701S module selects
+two lanes (LANSEL high). Two-lane evaluation uses 500 Mbps per lane with
+the existing pixel clock and panel timings.
+
+Use the same content and measure `renderSubmittedFrames` deltas over a fixed
+interval for 1-lane and 2-lane with the same render interval. To evaluate
+render scheduling separately, set `CONFIG_PET_P4_MAIN_RENDER_INTERVAL_MS=33`.
+The desktop client can read lane count, per-lane bitrate, pixel clock and
+target interval from `diagnostics/status.runtime`.
+
+In the local firmware builder, use `--lcd-lanes 2` for the dual-lane profile
+and `--render-interval-ms 33` for the faster render interval. Experimental
+profiles have separate output paths. `--lcd-lane-mbps` can vary the lane
+rate within the ST7701S limits of 800 Mbps for one lane and 550 Mbps per
+lane for two lanes.
+
+For a hardware comparison, sample the same device and animation with
+`firmware/tools/runtime_memory_probe.py` over matching time windows. It records
+the active build, display profile and frame counters. Check the physical LCD
+for correct colors and stable output after a cold boot and during animation.
+Keep USB available with a compatible single-lane recovery image: OTA runtime
+validation observes framebuffer submission, which can succeed with a blank LCD.

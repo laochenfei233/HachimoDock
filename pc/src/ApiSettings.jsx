@@ -1,6 +1,6 @@
 /**
  * [Input] Shared avatar provider configs including persisted video parameters, native Volcengine ASR credential commands, per-provider ASR/TTS voice-chat status, the persisted appearance preference, and optional return navigation.
- * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), saved ASR changes are broadcast with save vs. test results distinguished, an appearance group switches light/dark/auto theme in place, and video-generation providers switch through one segmented control with per-provider drafts retained.
+ * [Output] Independent LLM/ASR/TTS reads, honest credential-save errors and retained navigation drafts; speech credentials are scoped per provider (Doubao keeps the keyring path), saved ASR changes are broadcast with save vs. test results distinguished, an appearance group switches light/dark/auto theme in place, MiMo exposes pay-as-you-go and China Token Plan connections, and video-generation providers switch through one segmented control with per-provider drafts retained.
  * [Pos] top-level page node in pc/src
  * [Sync] If this file changes, update this header and `pc/src/.folder.md`.
  */
@@ -21,9 +21,12 @@ import {
 } from "lucide-react";
 import PageShell from "./shell/PageShell.jsx";
 import Card from "./shell/Card.jsx";
+
 import LlmNetworkSettings from "./LlmNetworkSettings.jsx";
 import GenerationDiagnostics from "./GenerationDiagnostics.jsx";
 import TextModelSelect from "./TextModelSelect.jsx";
+import KlingVideoSettings from "./KlingVideoSettings.jsx";
+import { KLING_KEY_URL } from "./lib/avatar-pipeline/kling-models.js";
 import ImageModelSelect from "./ImageModelSelect.jsx";
 import { VideoModelSelect } from "./VideoGenerationSettings.jsx";
 import { useUsageHelp } from "./shell/DeviceContext.jsx";
@@ -41,6 +44,8 @@ import {
 } from "./lib/avatar-pipeline/provider-config.js";
 import {
   LLM_PRESETS,
+  MIMO_CONNECTIONS,
+  mimoConnection,
   DEFAULT_LLM_PROVIDER,
   ASR_PROVIDER_PRESETS,
   TTS_PROVIDER_PRESETS,
@@ -64,8 +69,6 @@ function loadVideoConfigs() {
 function persistedProviderConfig(config) {
   return {
     apiKey: config.apiKey || "",
-    accessKey: config.accessKey || "",
-    secretKey: config.secretKey || "",
     baseUrl: config.baseUrl || "",
     model: config.model || "",
     thinkingModel: config.thinkingModel || "",
@@ -161,6 +164,9 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
     llmBaseUrl: "",
     llmModel: LLM_PRESETS.find(preset => preset.id === DEFAULT_LLM_PROVIDER).model,
     llmWebSearch: true,
+    llmSearchMode: "auto",
+    llmSearchApiKey: "",
+    llmSearchConfigured: false,
     llmApiKey: "",
     llmApiKeyMasked: "",
     llmApiKeyMasks: {},
@@ -171,8 +177,9 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
   const [weather, setWeather] = useState({
     loading: true, pending: false, qwKey: "", cyToken: "", qwHost: "", status: null, result: null,
   });
+  const mimo = mimoConnection(voiceChat.llmProvider);
   const llmDraft = JSON.stringify([voiceChat.llmProvider, voiceChat.llmBaseUrl, voiceChat.llmModel,
-    voiceChat.llmWebSearch, voiceChat.llmApiKey]);
+    voiceChat.llmWebSearch, voiceChat.llmApiKey, voiceChat.llmSearchMode, voiceChat.llmSearchApiKey]);
   useEffect(() => { if (!voiceChat.loading && savedLlm === null) setSavedLlm(llmDraft); }, [voiceChat.loading, savedLlm, llmDraft]);
   const speechDraft = JSON.stringify([speech.asrProvider, speech.asrBaseUrl, speech.asrModel, speech.asrApiKey,
     speech.ttsProvider, speech.ttsBaseUrl, speech.ttsModel, speech.ttsVoice, speech.ttsApiKey]);
@@ -191,6 +198,8 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       loading: false,
       llmConfigured: status?.llmConfigured === true,
       llmWebSearch: status?.llmWebSearch !== false,
+      llmSearchMode: status?.llmSearchMode || "auto",
+      llmSearchConfigured: status?.llmSearchConfigured === true,
       llmProvider: status?.llmProvider || current.llmProvider,
       llmBaseUrl: status?.llmBaseUrl || "",
       llmModel: status?.llmModel || "",
@@ -251,6 +260,8 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
         input: {
           llmProvider: voiceChat.llmProvider,
           llmWebSearch: voiceChat.llmWebSearch,
+          llmSearchMode: voiceChat.llmSearchMode,
+          llmSearchApiKey: voiceChat.llmSearchApiKey.trim() || null,
           llmBaseUrl: custom ? voiceChat.llmBaseUrl : null,
           llmModel: voiceChat.llmModel.trim(),
           llmApiKey: voiceChat.llmApiKey.trim() || null,
@@ -260,12 +271,25 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       applyVoiceChatStatus(status, {
         llmPending: false,
         llmApiKey: "",
+        llmSearchApiKey: "",
         llmTone: status?.llmConfigured ? "success" : "warning",
         llmMessage: status?.llmConfigured ? "配置已保存，开始聊天时将使用所选模型。" : "已保存，但还没有 API Key",
       });
       setSavedLlm(null);
     } catch (error) {
       setVoiceChat((current) => ({ ...current, llmPending: false, llmTone: "error", llmMessage: `保存失败：${error}` }));
+    }
+  };
+
+  const clearSearchKey = async () => {
+    setVoiceChat(current => ({ ...current, llmPending: true }));
+    try {
+      await invoke("clear_voice_chat_secret", { which: "search" });
+      setVoiceChat(current => ({ ...current, llmPending: false, llmSearchConfigured: false,
+        llmSearchApiKey: "", llmTone: "success", llmMessage: "已删除独立搜索 Key。" }));
+    } catch (error) {
+      setVoiceChat(current => ({ ...current, llmPending: false, llmTone: "error",
+        llmMessage: `删除搜索 Key 失败：${error}` }));
     }
   };
 
@@ -406,9 +430,7 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
         ...current,
         [providerId]: {
           tone: "warning",
-          message: providerId === "kling"
-            ? "请填写 Access Key 和 Secret Key。"
-            : "请填写 API Key。",
+          message: "请填写 API Key。",
         },
       }));
       return;
@@ -435,7 +457,9 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
     } finally {
       setProviderPending(current => ({ ...current, [providerId]: false }));
     }
-    setSavedVideoConfigs(current => ({ ...current, [providerId]: config }));
+    const savedConfig = { ...config, needsKlingApiKey: false };
+    setVideoConfigs(current => current[providerId] === config ? { ...current, [providerId]: savedConfig } : current);
+    setSavedVideoConfigs(current => ({ ...current, [providerId]: savedConfig }));
     setProviderResults((current) => ({
       ...current,
       [providerId]: { tone: "success", message: "已保存到当前客户端。" },
@@ -465,6 +489,18 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
           apiKey: speech.asrApiKey.trim() || null,
         },
       });
+      if (isCustom) {
+        await invoke("save_voice_chat_settings", {
+          input: {
+            ttsProvider: "openai",
+            ttsBaseUrl: speechCustom.baseUrl.trim(),
+            ttsModel: speechCustom.ttsModel.trim() || null,
+            ttsVoice: speechCustom.ttsVoice.trim() || null,
+          },
+        });
+      } else {
+        await invoke("save_voice_chat_settings", { input: { ttsProvider: "volcengine" } });
+      }
       emitApiConfigurationUpdated({
         providerId: "volcengine-asr",
         configured: saved?.configured === true,
@@ -556,8 +592,8 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
   return (
     <div className="api-settings-page">
     <PageShell
-      title="设置"
-      subtitle="API 服务配置"
+      title="模型配置"
+      subtitle="配置语音、对话和形象生成服务"
       actions={(
         <div className="api-settings__page-actions">
           <button
@@ -866,21 +902,33 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       <Card title="对话大模型" subtitle="决定宠物在「实时对话」中如何理解和回答。选择一家服务并填写 API Key 即可。此配置用于和宠物聊天，不影响 ChatGPT、Claude 等 Agent 的语音输入。">
         <UsageHelp />
         <div className="api-settings__segments" role="radiogroup" aria-label="对话大模型">
-          {[...LLM_PRESETS, { id: "custom", label: "自定义" }].map((preset) => (
-            <button
+          {[...LLM_PRESETS, { id: "custom", label: "自定义" }].map((preset) => {
+            const selected = preset.id === "mimo" ? Boolean(mimo) : voiceChat.llmProvider === preset.id;
+            return <button
               key={preset.id}
               type="button"
               role="radio"
-              aria-checked={voiceChat.llmProvider === preset.id}
-              className={"api-settings__segment" + (voiceChat.llmProvider === preset.id ? " is-active" : "")}
-              onClick={() => setVoiceChat((current) => selectLlmProvider(current, preset.id))}
+              aria-checked={selected}
+              className={"api-settings__segment" + (selected ? " is-active" : "")}
+              onClick={() => setVoiceChat(current => selected ? current : selectLlmProvider(current, preset.id))}
               disabled={voiceChat.llmPending || voiceChat.loading}
             >
               {preset.label}
-            </button>
-          ))}
+            </button>;
+          })}
         </div>
         <div className="api-settings__form api-settings__form--llm">
+          {mimo && (
+            <label className="ui-field" htmlFor="api-settings-mimo-connection">
+              <span className="ui-field__label">MiMo 接入方式</span>
+              <select id="api-settings-mimo-connection" className="ui-control" value={mimo.id}
+                onChange={event => setVoiceChat(current => selectLlmProvider(current, event.target.value))}
+                disabled={voiceChat.llmPending || voiceChat.loading}>
+                {MIMO_CONNECTIONS.map(connection => <option key={connection.id} value={connection.id}>{connection.label}</option>)}
+              </select>
+              <span className="muted small">接口地址 {mimo.baseUrl}</span>
+            </label>
+          )}
           {voiceChat.llmProvider === "custom" ? (
             <>
               <label className="ui-field" htmlFor="api-settings-llm-url">
@@ -895,7 +943,7 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
                 />
               </label>
             </>
-          ) : (
+          ) : !mimo && (
             <div className="api-settings__preset-summary muted small">
               {describeLlmPreset(voiceChat.llmProvider, voiceChat.llmModel)}
             </div>
@@ -918,7 +966,9 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
               autoComplete="new-password"
               value={voiceChat.llmApiKey}
               onChange={(event) => setVoiceChat((current) => ({ ...current, llmApiKey: event.target.value }))}
-              placeholder={voiceChat.llmConfigured ? `已保存 ${voiceChat.llmApiKeyMasked}；留空保持不变` : "粘贴这家模型的 API Key"}
+              placeholder={voiceChat.llmConfigured ? `已保存 ${voiceChat.llmApiKeyMasked}；留空保持不变`
+                : mimo ? (mimo.id === "mimo" ? "粘贴 MiMo 按量 API Key" : "粘贴该集群的 Token Plan API Key")
+                  : "粘贴这家模型的 API Key"}
               disabled={voiceChat.llmPending || voiceChat.loading}
             />
           </label>
@@ -946,10 +996,42 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
             : <CheckCircle2 size={13} />}
           {voiceChat.llmMessage}
         </div>
+        <label className="ui-field api-settings__search-option">
+          <span><input type="checkbox" checked={voiceChat.llmWebSearch}
+            disabled={voiceChat.llmPending || voiceChat.loading}
+            onChange={event => setVoiceChat(current => ({ ...current, llmWebSearch: event.target.checked }))} /> 按需联网检索</span>
+          <span className="muted small">明确说「联网搜」可直接检索，闲聊和家居控制通常无需上网。检索可能单独计费。修改后点击保存，下次开始聊天生效。</span>
+        </label>
+        {voiceChat.llmWebSearch && <>
+          <label className="ui-field">
+            <span>检索来源</span>
+            <select value={voiceChat.llmSearchMode}
+              disabled={voiceChat.llmPending || voiceChat.loading}
+              onChange={event => setVoiceChat(current => ({ ...current, llmSearchMode: event.target.value }))}>
+              <option value="auto">自动 · 当前服务商</option>
+              <option value="deepSeek">DeepSeek 搜索</option>
+              <option value="autoWithDeepSeek">自动 · DeepSeek 备用</option>
+            </select>
+          </label>
+          {(voiceChat.llmSearchMode !== "auto" || voiceChat.llmSearchConfigured) && <div>
+            <label className="ui-field">
+              <span>DeepSeek 搜索 API Key</span>
+              <input type={showSecrets ? "text" : "password"} autoComplete="off" spellCheck={false}
+                value={voiceChat.llmSearchApiKey}
+                placeholder={voiceChat.llmSearchConfigured ? "已保存，留空继续使用" : "输入 DeepSeek 官方 API Key"}
+                disabled={voiceChat.llmPending || voiceChat.loading}
+                onChange={event => setVoiceChat(current => ({ ...current, llmSearchApiKey: event.target.value }))} />
+              <span className="muted small">使用其他对话服务商时，请单独填写。对话已接入官方 DeepSeek 时可复用其 Key。启用备用后，当前服务商无法完成检索时会把公开关键词发送给 DeepSeek。</span>
+            </label>
+            {voiceChat.llmSearchConfigured && <button type="button" className="btn-ghost btn-sm"
+              disabled={voiceChat.llmPending || voiceChat.loading}
+              onClick={clearSearchKey}>删除独立搜索 Key</button>}
+          </div>}
+        </>}
         <LlmNetworkSettings />
       </Card>
 
-      <Card title="形象生成" subtitle="用于新形象生成与单状态视频替换">
+      <Card title="形象生成" subtitle="新形象默认使用已配置的火山引擎，也可在生成配置中选择可灵 AI">
         <GenerationDiagnostics />
         <div className="api-settings__segments" role="radiogroup" aria-label="形象生成服务商">
           {VIDEO_PROVIDERS.map((provider) => (
@@ -1001,47 +1083,27 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
                 </header>
 
                 <fieldset className="api-settings__provider-fields" disabled={Boolean(configReadError)} style={{border:0,margin:0,minWidth:0}}>
-                  {isKling ? (
-                    <>
-                      <label className="ui-field" htmlFor="api-settings-kling-access">
-                        <span className="ui-field__label">Access Key</span>
-                        <input
-                          id="api-settings-kling-access"
-                          className="ui-control api-settings__secret-input"
-                          type={showSecrets ? "text" : "password"}
-                          autoComplete="new-password"
-                          value={config.accessKey}
-                          onChange={(event) => updateProvider(provider.id, { accessKey: event.target.value })}
-                          placeholder="Kling Access Key"
-                        />
-                      </label>
-                      <label className="ui-field" htmlFor="api-settings-kling-secret">
-                        <span className="ui-field__label">Secret Key</span>
-                        <input
-                          id="api-settings-kling-secret"
-                          className="ui-control api-settings__secret-input"
-                          type={showSecrets ? "text" : "password"}
-                          autoComplete="new-password"
-                          value={config.secretKey}
-                          onChange={(event) => updateProvider(provider.id, { secretKey: event.target.value })}
-                          placeholder="Kling Secret Key"
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <label className="ui-field" htmlFor={`api-settings-${provider.id}-key`}>
-                      <span className="ui-field__label">API Key</span>
-                      <input
-                        id={`api-settings-${provider.id}-key`}
-                        className="ui-control api-settings__secret-input"
-                        type={showSecrets ? "text" : "password"}
-                        autoComplete="new-password"
-                        value={config.apiKey === "hachimidock-bundled-ark-v1" ? "" : config.apiKey}
-                        onChange={(event) => updateProvider(provider.id, { apiKey: event.target.value })}
-                        placeholder={config.apiKey === "hachimidock-bundled-ark-v1" ? "内置服务已启用，可填写自己的 Key 替换" : `输入${provider.label} API Key`}
-                      />
-                    </label>
-                  )}
+                  <label className="ui-field" htmlFor={`api-settings-${provider.id}-key`}>
+                    <span className="ui-field__label">API Key</span>
+                    <input
+                      id={`api-settings-${provider.id}-key`}
+                      className="ui-control api-settings__secret-input"
+                      type={showSecrets ? "text" : "password"}
+                      autoComplete="new-password"
+                      value={config.apiKey === "hachimidock-bundled-ark-v1" ? "" : config.apiKey}
+                      onChange={(event) => updateProvider(provider.id, { apiKey: event.target.value })}
+                      placeholder={config.apiKey === "hachimidock-bundled-ark-v1" ? "内置服务已启用，可填写自己的 Key 替换" : `输入${provider.label} API Key`}
+                    />
+                  </label>
+                  {isKling && <>
+                    <a className="api-settings__credential-link" href={KLING_KEY_URL} target="_blank" rel="noreferrer">
+                      在可灵国内开发者控制台获取 API Key <ExternalLink size={11} aria-hidden="true" />
+                    </a>
+                    {config.needsKlingApiKey && <span className="muted small">旧版凭据需要换成新版 API Key，保存后生效。</span>}
+                    <KlingVideoSettings model={config.model} value={config.videoParameters}
+                      onModel={model => updateProvider(provider.id, { model })}
+                      onChange={videoParameters => updateProvider(provider.id, { videoParameters })} />
+                  </>}
                   {isCustom && (
                     <label className="ui-field" htmlFor="api-settings-custom-url">
                       <span className="ui-field__label">Base URL</span>

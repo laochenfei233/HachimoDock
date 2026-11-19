@@ -28,6 +28,7 @@ static STORAGE_DIR: OnceLock<PathBuf> = OnceLock::new();
 // Separate from credentials and per-appearance voices. Saving volume must not
 // rewrite keys, and switching appearance must never restore an old gain.
 const VOLUME_FILE: &str = "realtime-voice-volume.json";
+pub(crate) const DEFAULT_REALTIME_VOLUME: f32 = 0.8;
 static VOLUME_LOCK: Mutex<()> = Mutex::new(());
 static SETTINGS_MUTATION: Mutex<()> = Mutex::new(());
 
@@ -71,7 +72,7 @@ fn read_volume_at(dir: &Path) -> Result<f32, String> {
             if latest.is_none_or(|(time, _)| modified > time) { latest = Some((modified, volume)); }
         }
     }
-    write_volume_at(dir, latest.map(|(_, v)| v).unwrap_or(1.0))
+    write_volume_at(dir, latest.map(|(_, v)| v).unwrap_or(DEFAULT_REALTIME_VOLUME))
 }
 
 pub fn realtime_volume() -> Result<f32, String> {
@@ -96,6 +97,7 @@ pub const LLM_PRESETS: &[LlmPreset] = &[
     LlmPreset { id: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", model: "deepseek-flash" },
     LlmPreset { id: "doubao", label: "豆包（火山方舟）", base_url: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-2-1-lite-260915" },
     LlmPreset { id: "mimo", label: "Xiaomi MiMo", base_url: "https://api.xiaomimimo.com/v1", model: "mimo-v2.6-flash" },
+    LlmPreset { id: "mimo-token-plan-cn", label: "MiMo Token Plan", base_url: "https://token-plan-cn.xiaomimimo.com/v1", model: "mimo-v2.6-flash" },
 ];
 pub const DEFAULT_LLM_PROVIDER: &str = "doubao";
 
@@ -162,7 +164,7 @@ fn speech_scope(provider: &str, base_url: &str) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct VoiceChatSettings {
-    /// "deepseek" | "doubao" | "mimo" | "custom" — presets supply defaults, not a model whitelist.
+    /// A preset ID from LLM_PRESETS, or "custom". The model can be set independently.
     pub llm_provider: String,
     pub llm_base_url: String,
     pub llm_model: String,
@@ -184,9 +186,22 @@ pub struct VoiceChatSettings {
     pub tts_voice: String,
     /// ASR/TTS 共用的按服务商凭据；volcengine 例外——其 Key 继续存于 volcengine_asr 凭据库。
     pub speech_api_keys: BTreeMap<String, String>,
+    pub llm_search_mode: crate::web_search::Mode,
+    pub llm_search_api_key: String,
     pub tts_api_key: String,
     pub tts_resource_id: String,
+    /// "volcengine" (built-in) or "openai" (custom OpenAI-compatible endpoint).
+    #[serde(default = "default_tts_provider")]
+    pub tts_provider: String,
+    #[serde(default)]
+    pub tts_base_url: String,
+    #[serde(default)]
+    pub tts_model: String,
+    #[serde(default)]
+    pub tts_voice: String,
 }
+
+fn default_tts_provider() -> String { "volcengine".into() }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -207,14 +222,22 @@ pub struct VoiceChatSettingsInput {
     pub tts_voice: Option<String>,
     /// 新写入的语音合成 Key；按 tts_provider 的 scope 入库。
     pub tts_speech_key: Option<String>,
+    pub llm_search_mode: Option<crate::web_search::Mode>,
+    pub llm_search_api_key: Option<String>,
     pub tts_api_key: Option<String>,
     pub tts_resource_id: Option<String>,
+    pub tts_provider: Option<String>,
+    pub tts_base_url: Option<String>,
+    pub tts_model: Option<String>,
+    pub tts_voice: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceChatSettingsStatus {
     pub llm_web_search: bool,
+    pub llm_search_mode: crate::web_search::Mode,
+    pub llm_search_configured: bool,
     pub llm_configured: bool,
     pub tts_configured: bool,
     pub llm_provider: String,
@@ -236,6 +259,10 @@ pub struct VoiceChatSettingsStatus {
     pub tts_voice: String,
     pub tts_api_key_masked: String,
     pub tts_resource_id: String,
+    pub tts_provider: String,
+    pub tts_base_url: String,
+    pub tts_model: String,
+    pub tts_voice: String,
     pub credential_source: &'static str,
 }
 
@@ -362,9 +389,44 @@ fn apply_speech_defaults(settings: &mut VoiceChatSettings) {
 }
 
 /// ASR and TTS resolve the same key after legacy migration; no hidden TTS override.
+pub(crate) fn custom_speech_base_url(value: &str) -> Result<String, String> {
+    let url = reqwest::Url::parse(value.trim()).map_err(|_| "语音服务地址无效")?;
+    let host = url.host_str().ok_or("语音服务地址缺少主机")?;
+    let loopback = host == "localhost"
+        || host.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback());
+    if !(url.scheme() == "https" || (url.scheme() == "http" && loopback))
+        || !url.username().is_empty() || url.password().is_some()
+        || url.query().is_some() || url.fragment().is_some()
+    {
+        return Err("语音服务需使用 HTTPS，本机回环地址可用 HTTP，地址中请勿携带凭据".into());
+    }
+    Ok(url.as_str().trim_end_matches('/').trim_end_matches("/v1").to_owned())
+}
+
+pub(crate) async fn read_custom_speech_response(
+    mut response: reqwest::Response, limit: usize,
+) -> Result<Vec<u8>, String> {
+    if !response.status().is_success() {
+        return Err(format!("语音服务返回 HTTP {}", response.status().as_u16()));
+    }
+    let mut data = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "读取语音服务响应失败")? {
+        if chunk.len() > limit.saturating_sub(data.len()) {
+            return Err("语音服务响应超过大小上限".into());
+        }
+        data.extend_from_slice(&chunk);
+    }
+    Ok(data)
+}
+
 fn resolve_tts_key(settings: &VoiceChatSettings) -> (String, bool) {
-    match speech_key(settings, &settings.tts_provider, &settings.tts_base_url) {
-        Some(key) => (key, settings.tts_provider == "volcengine"),
+    let key = if settings.tts_provider == "openai" {
+        crate::volcengine_asr::custom_key_for_endpoint(&settings.tts_base_url)
+    } else {
+        speech_key(settings, &settings.tts_provider, &settings.tts_base_url)
+    };
+    match key {
+        Some(key) => (key, matches!(settings.tts_provider.as_str(), "volcengine" | "openai")),
         None => (String::new(), false),
     }
 }
@@ -424,6 +486,7 @@ pub fn migrate_shared_speech_key() -> Result<(), String> {
     migrate_shared_speech_key_at(&settings_path()?, asr.configured, &effective.tts_api_key, |key| {
         crate::volcengine_asr::save_settings(crate::volcengine_asr::DeviceAsrSettingsInput {
             api_key: Some(key.to_string()), resource_id: None,
+            provider: None, base_url: None, model: None,
         }).map(|_| ())
     })
 }
@@ -451,6 +514,8 @@ pub fn status() -> Result<VoiceChatSettingsStatus, String> {
     let (asr_masked, tts_masked) = speech_masks(&settings);
     Ok(VoiceChatSettingsStatus {
         llm_web_search: settings.llm_web_search.unwrap_or(true),
+        llm_search_mode: settings.llm_search_mode,
+        llm_search_configured: !settings.llm_search_api_key.trim().is_empty(),
         llm_configured: !settings.llm_api_key.trim().is_empty(),
         tts_configured: !tts_key.is_empty(),
         llm_provider: settings.llm_provider.clone(),
@@ -471,6 +536,10 @@ pub fn status() -> Result<VoiceChatSettingsStatus, String> {
         tts_voice: settings.tts_voice.clone(),
         tts_api_key_masked: if tts_uses_asr_key { mask_secret(&tts_key) } else { tts_masked },
         tts_resource_id: settings.tts_resource_id.clone(),
+        tts_provider: settings.tts_provider.clone(),
+        tts_base_url: settings.tts_base_url.clone(),
+        tts_model: settings.tts_model.clone(),
+        tts_voice: settings.tts_voice.clone(),
         credential_source: source,
     })
 }
@@ -516,6 +585,13 @@ fn merge_settings(mut settings: VoiceChatSettings, input: VoiceChatSettingsInput
     // 语音字段先合并：下方 LLM 合并按值解构 input，之后再借用会触发 partial move。
     merge_speech_settings(&mut settings, &input);
     if let Some(enabled) = input.llm_web_search { settings.llm_web_search = Some(enabled); }
+    if let Some(mode) = input.llm_search_mode { settings.llm_search_mode = mode; }
+    if let Some(key) = input.llm_search_api_key {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() && !trimmed.contains('…') && trimmed != "••••" {
+            settings.llm_search_api_key = trimmed.to_owned();
+        }
+    }
     remember_active_key(&mut settings);
     let previous_scope = credential_scope(&settings);
     if let Some(value) = input.llm_provider {
@@ -551,6 +627,19 @@ fn merge_settings(mut settings: VoiceChatSettings, input: VoiceChatSettingsInput
     }
     if let Some(value) = input.tts_resource_id {
         settings.tts_resource_id = value.trim().to_string();
+    }
+    if let Some(value) = input.tts_provider {
+        let v = value.trim();
+        settings.tts_provider = if v == "openai" { "openai".into() } else { "volcengine".into() };
+    }
+    if let Some(value) = input.tts_base_url {
+        settings.tts_base_url = value.trim().to_string();
+    }
+    if let Some(value) = input.tts_model {
+        settings.tts_model = value.trim().to_string();
+    }
+    if let Some(value) = input.tts_voice {
+        settings.tts_voice = value.trim().to_string();
     }
     remember_active_key(&mut settings);
     settings
@@ -613,6 +702,7 @@ pub fn clear_secret(which: &str) -> Result<VoiceChatSettingsStatus, String> {
             settings.speech_api_keys.remove(&speech_scope(&settings.tts_provider, &settings.tts_base_url));
             settings.tts_api_key.clear();
         },
+        "search" => settings.llm_search_api_key.clear(),
         _ => return Err("unknown secret".to_string()),
     }
     write_file(&path, &settings)?;
@@ -623,6 +713,7 @@ pub fn clear_secret(which: &str) -> Result<VoiceChatSettingsStatus, String> {
 pub fn llm_config() -> Result<LlmConfig, String> {
     let (settings, _) = load()?;
     Ok(LlmConfig {
+        search: crate::web_search::Settings { mode: settings.llm_search_mode, api_key: settings.llm_search_api_key },
         web_search: settings.llm_web_search.unwrap_or(true),
         base_url: settings.llm_base_url,
         model: settings.llm_model,
@@ -666,8 +757,10 @@ fn catalog_model_ids(value: &serde_json::Value) -> Result<Vec<String>, String> {
 pub async fn list_models(input: VoiceChatSettingsInput) -> Result<Vec<String>, String> {
     let settings = catalog_settings(load()?.0, input)?;
     let client = crate::llm_network::client(std::time::Duration::from_secs(15))?;
-    let mut response = client.get(format!("{}/models", settings.llm_base_url.trim_end_matches('/')))
-        .bearer_auth(&settings.llm_api_key).send().await.map_err(|e| crate::llm_network::connection_error(&e))?;
+    let base = settings.llm_base_url.trim_end_matches('/');
+    let request = client.get(format!("{base}/models"));
+    let mut response = crate::web_search::authorize(request, &format!("{base}/chat/completions"), &settings.llm_api_key)
+        .send().await.map_err(|e| crate::llm_network::connection_error(&e))?;
     if !response.status().is_success() { return Err(format!("模型目录获取失败（HTTP {}），请检查该服务的 Key 和权限；可手动填写模型 ID", response.status().as_u16())); }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| "模型目录读取中断")? {
@@ -695,6 +788,7 @@ fn news_search_config_from(settings:&VoiceChatSettings)->Result<LlmConfig,String
         else{settings.llm_api_keys.get("doubao")}
         .filter(|s|!s.trim().is_empty()).ok_or("请先在 API 配置保存豆包对话模型的 Key，用于资讯联网检索；语音合成 Key 不适用")?;
     Ok(LlmConfig{
+        search: Default::default(),
         web_search:true,base_url:preset.base_url.into(),api_key:key.trim().into(),
         model:if active&&!settings.llm_model.trim().is_empty(){settings.llm_model.trim().into()}else{preset.model.into()},
     })
@@ -704,13 +798,20 @@ pub fn tts_config(speaker: &str, clone_speaker_id: &str, speed: f32) -> Result<D
     migrate_shared_speech_key()?;
     let (settings, _) = load()?;
     let (tts_key, _) = resolve_tts_key(&settings);
-    Ok(DoubaoTtsConfig::new(
+    let mut cfg = DoubaoTtsConfig::new(
         &tts_key,
         speaker,
         clone_speaker_id,
         speed,
         &settings.tts_resource_id,
-    ))
+    );
+    cfg.tts_provider = settings.tts_provider.clone();
+    if settings.tts_provider == "openai" {
+        cfg.tts_base_url = custom_speech_base_url(&settings.tts_base_url)?;
+        cfg.tts_model = settings.tts_model.clone();
+        cfg.tts_voice = settings.tts_voice.trim().to_owned();
+    }
+    Ok(cfg)
 }
 
 /// 豆包风格的音色 id 对其他服务商无效：回退到该服务商默认音色（组件语音/新闻读书场景）。
@@ -805,6 +906,52 @@ pub fn tts_engine_with_cache_key(voice_provider: Option<&str>, speaker: &str, cl
 #[cfg(test)]
 mod tests {
     #[test]
+    fn mimo_china_token_plan_never_reuses_the_pay_as_you_go_key() {
+        let initial = VoiceChatSettings { llm_provider: "mimo".into(), llm_api_key: "payg-fixture".into(), ..Default::default() };
+        let token = merge_settings(initial, VoiceChatSettingsInput {
+            llm_provider: Some("mimo-token-plan-cn".into()),
+            ..Default::default()
+        });
+        assert!(token.llm_api_key.is_empty());
+        let supplied = VoiceChatSettingsInput {
+            llm_api_key: Some("plan-fixture".into()),
+            llm_base_url: Some("https://unrelated.example".into()),
+            ..Default::default()
+        };
+        let token = catalog_settings(token, supplied).unwrap();
+        assert_eq!(token.llm_base_url, "https://token-plan-cn.xiaomimimo.com/v1");
+        assert_eq!(token.llm_api_key, "plan-fixture");
+        let payg = catalog_settings(token, VoiceChatSettingsInput { llm_provider: Some("mimo".into()), ..Default::default() }).unwrap();
+        assert_eq!(payg.llm_base_url, "https://api.xiaomimimo.com/v1");
+        assert_eq!(payg.llm_api_key, "payg-fixture");
+        assert_eq!(payg.llm_api_keys["mimo-token-plan-cn"], "plan-fixture");
+    }
+
+    #[test]
+    fn independent_search_settings_remain_separate_when_chat_provider_changes() {
+        use crate::web_search::Mode;
+        let legacy: VoiceChatSettings = serde_json::from_value(serde_json::json!({
+            "llmProvider":"deepseek", "llmApiKey":"chat-fixture"
+        })).unwrap();
+        assert_eq!(legacy.llm_search_mode, Mode::Auto);
+        assert!(legacy.llm_search_api_key.is_empty());
+        let saved = merge_settings(legacy, VoiceChatSettingsInput {
+            llm_search_mode: Some(Mode::AutoWithDeepSeek),
+            llm_search_api_key: Some(" search-fixture ".into()),
+            ..Default::default()
+        });
+        let switched = merge_settings(saved, VoiceChatSettingsInput {
+            llm_provider: Some("doubao".into()),
+            llm_api_key: Some("doubao-fixture".into()),
+            ..Default::default()
+        });
+        assert_eq!(switched.llm_search_mode, Mode::AutoWithDeepSeek);
+        assert_eq!(switched.llm_search_api_key, "search-fixture");
+        assert_eq!(switched.llm_api_key, "doubao-fixture");
+        assert_eq!(switched.llm_api_keys["deepseek"], "chat-fixture");
+    }
+
+    #[test]
     fn catalog_uses_only_target_provider_or_exact_endpoint_key_and_never_mutates_input() {
         let mut settings = VoiceChatSettings { llm_provider: "deepseek".into(), llm_api_key: "ds-secret".into(), ..Default::default() };
         settings.llm_api_keys.insert("doubao".into(), "ark-secret".into());
@@ -870,7 +1017,7 @@ mod tests {
     #[test]
     fn global_volume_defaults_and_corruption_is_not_silently_full_volume() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(super::read_volume_at(dir.path()).unwrap(), 1.0);
+        assert_eq!(super::read_volume_at(dir.path()).unwrap(), 0.8);
         std::fs::write(dir.path().join(super::VOLUME_FILE), "broken").unwrap();
         assert!(super::read_volume_at(dir.path()).is_err());
         super::write_volume_at(dir.path(), 0.3).unwrap();
@@ -880,8 +1027,9 @@ mod tests {
 
     #[test]
     fn provider_changes_drop_old_secrets_even_when_input_is_blank_or_masked() {
-        for from in ["deepseek", "doubao", "mimo", "custom"] {
-            for to in ["deepseek", "doubao", "mimo", "custom"] {
+        let providers = || LLM_PRESETS.iter().map(|preset| preset.id).chain(["custom"]);
+        for from in providers() {
+            for to in providers() {
                 for incoming in [None, Some(""), Some("  "), Some("tes…mask"), Some("••••")] {
                     let stored = VoiceChatSettings { llm_provider: from.into(), llm_api_key:"old-test-key".into(),
                         llm_model:"saved-model".into(), ..Default::default() };
@@ -1020,7 +1168,9 @@ mod tests {
         let preset = llm_preset("mimo").unwrap();
         assert_eq!(preset.base_url, "https://api.xiaomimimo.com/v1");
         assert_eq!(preset.model, "mimo-v2.6-flash");
-        assert_eq!(LLM_PRESETS.len(), 3);
+        let token_plan = llm_preset("mimo-token-plan-cn").unwrap();
+        assert_eq!(token_plan.base_url, "https://token-plan-cn.xiaomimimo.com/v1");
+        assert_eq!(token_plan.label, "MiMo Token Plan");
     }
 
     #[test]

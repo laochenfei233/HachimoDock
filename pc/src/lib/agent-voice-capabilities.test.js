@@ -9,6 +9,14 @@ test("native Mac Codex draft path does not require the CLI transport", () => {
   assert.equal(deviceVoiceTransportReady("openclaw", "macos", true), true);
 });
 
+test("Devin uses the Windows visible composer and is unsupported on macOS", () => {
+  assert.equal(deviceVoiceTransportReady("devin", "windows", false), true);
+  assert.equal(deviceVoiceTransportReady("devin", "macos", true), false);
+  assert.match(deviceVoicePlatformWarning("devin", "macos"), /macOS 暂不支持/);
+  assert.match(deviceVoicePlatformWarning("devin", "other"), /仅支持 Windows/);
+  assert.equal(deviceVoicePlatformWarning("devin", "windows"), "");
+});
+
 test("ZCode visible input box draft path is ready on desktop platforms without a CLI transport", () => {
   assert.equal(deviceVoiceTransportReady("zcode", "macos", false), true);
   assert.equal(deviceVoiceTransportReady("zcode", "windows", false), true);

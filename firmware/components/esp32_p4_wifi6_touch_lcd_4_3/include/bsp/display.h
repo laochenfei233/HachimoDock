@@ -32,8 +32,15 @@
 #define BSP_LCD_H_RES              (480)
 #define BSP_LCD_V_RES              (640)
 
-#define BSP_LCD_MIPI_DSI_LANE_BITRATE_MBPS (800)
-#define BSP_LCD_MIPI_DSI_LANE_NUM          (1)    // WLK2802MIPI-15P/ST7701S uses 1 data lane
+#define BSP_LCD_MIPI_DSI_LANE_NUM CONFIG_BSP_LCD_DSI_DATA_LANES
+#define BSP_LCD_MIPI_DSI_LANE_BITRATE_MBPS CONFIG_BSP_LCD_DSI_LANE_BITRATE_MBPS
+
+#if CONFIG_ESP32P4_REV_MIN_FULL >= 300
+// The exact divider avoids a negative horizontal porch on P4 v3.
+#define BSP_LCD_DPI_CLOCK_MHZ 24
+#else
+#define BSP_LCD_DPI_CLOCK_MHZ 25
+#endif
 
 #define BSP_MIPI_DSI_PHY_PWR_LDO_CHAN       (3)  // LDO_VO3 is connected to VDD_MIPI_DPHY
 #define BSP_MIPI_DSI_PHY_PWR_LDO_VOLTAGE_MV (2500)

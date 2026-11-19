@@ -96,7 +96,7 @@ pub(super) fn prepare(id:&str,board:&str,setup:crate::voice_chat_settings::TtsEn
         let persona=crate::component_voice::acceptance_persona(&settings,"builtin-terrier");
         let v=&persona["voice"];
         let voice=json!({"boardDeviceId":"cache-test-only","appearanceId":"builtin-terrier","speaker":v["speaker"],"cloneSpeakerId":v["clone_speaker_id"].as_str().unwrap_or(""),"speed":v["speed"].as_f64().unwrap_or(1.0)});
-        let d:Value=serde_json::from_str(include_str!("../../../builtin-clawpkgs/daily-news/pc/application.json")).unwrap();
+        let d:Value=serde_json::from_str(include_str!("../../../optional-clawpkgs/daily-news/pc/application.json")).unwrap();
         crate::component_news::seed_verified_acceptance_report("daily-news",&PathBuf::from(std::env::var("PET_NEWS_REPORT").unwrap()),d["content"].as_array().unwrap());
         crate::component_voice::component_speech_set_pet_voice(Some(serde_json::from_value(voice.clone()).unwrap())).unwrap();
         let setup=crate::component_voice::config("cache-test-only").unwrap();

@@ -9,6 +9,7 @@ const { CodexAdapter } = require("./adapters/codex");
 const { OpenClawAdapter } = require("./adapters/openclaw");
 const { MiMoCodeAdapter } = require("./adapters/mimocode");
 const { WorkBuddyAdapter } = require("./adapters/workbuddy");
+const { DevinAdapter } = require("./adapters/devin");
 const { DshAdapter } = require("./adapters/dsh");
 const { PrismAdapter } = require("./adapters/prism");
 const { ZcodeAdapter } = require("./adapters/zcode");
@@ -31,6 +32,7 @@ function createAgentSessionBus({
   port,
   host = "127.0.0.1",
   adapters = [],
+  capability,
   sessionStatusProvider,
   sessionEventProvider,
   log,
@@ -42,6 +44,7 @@ function createAgentSessionBus({
     port: finalPort,
     host,
     registry,
+    capability,
     sessionStatusProvider,
     sessionEventProvider,
     log: finalLog,
@@ -59,6 +62,7 @@ module.exports = {
   OpenClawAdapter,
   MiMoCodeAdapter,
   WorkBuddyAdapter,
+  DevinAdapter,
   DshAdapter,
   PrismAdapter,
   ZcodeAdapter,
