@@ -1637,6 +1637,18 @@ select:focus-visible {
   background: var(--danger-soft);
 }
 
+.api-settings__release-notes {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: var(--space-3);
+  font-family: inherit;
+}
+
 .api-settings__result.is-warning {
   color: var(--warning);
   background: var(--warning-soft);
