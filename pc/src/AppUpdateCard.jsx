@@ -26,7 +26,18 @@ export default function AppUpdateCard({ active = true }) {
   const [downloading, setDownloading] = useState(false);
   const [percent, setPercent] = useState(0);
   const [downloadedPath, setDownloadedPath] = useState("");
-  useExitProtection(downloading ? "应用更新下载中，请等待完成或取消后再离开设置页" : "");
+  useExitProtection(downloading ? "应用更新下载中，请等待完成后再离开设置页" : "");
+
+  // Tauri v2 webview 会吞掉 _blank 导航；外部链接走 open_external_url（ShellExecuteW）。
+  const openReleasePage = useCallback(() => {
+    if (!status?.release_url) return;
+    if (window.__TAURI_INTERNALS__) {
+      invoke("open_external_url", { url: status.release_url })
+        .catch((error) => console.warn("[app-update] release page failed", error));
+    } else {
+      window.open(status.release_url, "_blank", "noopener");
+    }
+  }, [status?.release_url]);
 
   const runCheck = useCallback(async ({ announce = false } = {}) => {
     setChecking(true);
@@ -94,7 +105,7 @@ export default function AppUpdateCard({ active = true }) {
       push({
         tone: "success",
         title: "安装程序已启动",
-        message: "按安装器引导完成升级；安装期间建议先关闭本应用再继续。",
+        message: "按安装器引导完成升级；安装期间不要关闭本应用。",
       });
     } catch (error) {
       push({ tone: "error", title: "无法启动安装", message: String(error) });
@@ -103,12 +114,18 @@ export default function AppUpdateCard({ active = true }) {
 
   const latest = status?.latest_version || "";
   const updateAvailable = status?.update_available === true;
+  const hasRelease = status?.has_release === true;
+  const installable = status?.installable === true;
+  // 有 release 但本平台拿不到安装包（无资产或 macOS），一律退化为「前往发布页」。
+  const downloadInApp = updateAvailable && installable && status?.asset_url;
   const tone = updateAvailable ? "success" : "info";
+  const published = status?.published_at ? `；发布于 ${status.published_at.slice(0, 10)}` : "";
   const message = checking ? "正在检查更新…"
     : !status ? "尚未检查更新。"
-    : !latest ? "暂无发布版本（仓库还没有 Release）。"
-    : updateAvailable ? `发现新版本 ${latest}。`
-    : `已是最新版本（${latest}）。`;
+    : !hasRelease ? "暂无发布版本（仓库还没有 Release）。"
+    : downloadInApp ? `发现新版本 ${latest}${published}。`
+    : updateAvailable ? `发现新版本 ${latest}${published}；请前往发布页下载本平台的安装包。`
+    : `已是最新版本（${latest}）${published}。`;
 
   return (
     <Card
@@ -132,9 +149,9 @@ export default function AppUpdateCard({ active = true }) {
       {updateAvailable && status.release_notes && (
         <pre className="api-settings__release-notes muted small">{status.release_notes}</pre>
       )}
-      {updateAvailable && (
+      {(downloadInApp || (updateAvailable && status.release_url)) && (
         <div className="api-settings__save-row">
-          {downloadedPath ? (
+          {downloadInApp && (downloadedPath ? (
             <button type="button" className="btn-primary btn-sm" onClick={startInstall}>
               <Download size={14} />
               立即安装
@@ -144,13 +161,9 @@ export default function AppUpdateCard({ active = true }) {
               {downloading ? <LoaderCircle size={14} className="spin" /> : <Download size={14} />}
               {downloading ? (percent > 0 ? `下载中 ${percent}%` : "下载中…") : "下载并安装"}
             </button>
-          )}
+          ))}
           {status.release_url && (
-            <button
-              type="button"
-              className="btn-ghost btn-sm"
-              onClick={() => window.open(status.release_url, "_blank", "noopener")}
-            >
+            <button type="button" className="btn-ghost btn-sm" onClick={openReleasePage}>
               前往发布页
             </button>
           )}

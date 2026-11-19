@@ -27,6 +27,10 @@ pub struct AppUpdateStatus {
     pub asset_url: String,
     pub asset_size: u64,
     pub update_available: bool,
+    /// release 存在（区别于「仓库还没有 Release」的空态，用于「前往发布页」回退）。
+    pub has_release: bool,
+    /// 本平台是否支持应用内下载+安装；macOS 只引导到发布页。
+    pub installable: bool,
 }
 
 /// release 不可得（404/网络失败/无可用安装包资产）时的空态。
@@ -42,6 +46,8 @@ fn empty_status(current_version: &str) -> AppUpdateStatus {
         asset_url: String::new(),
         asset_size: 0,
         update_available: false,
+        has_release: false,
+        installable: cfg!(windows),
     }
 }
 
@@ -128,28 +134,42 @@ fn fetch_latest_release() -> Option<(serde_json::Value, Vec<Asset>)> {
 }
 
 #[tauri::command]
-pub fn app_update_check() -> AppUpdateStatus {
-    let current_version = env!("CARGO_PKG_VERSION").to_string();
-    let Some((release, assets)) = fetch_latest_release() else {
-        return empty_status(&current_version);
-    };
-    let Some(asset) = pick_asset(&assets) else {
-        return empty_status(&current_version);
-    };
-    let latest_version = release.get("tag_name").and_then(|t| t.as_str()).unwrap_or("").trim().to_string();
-    let update_available = compare_versions(&current_version, &latest_version).unwrap_or(false);
-    AppUpdateStatus {
-        current_version,
-        latest_version,
-        release_name: release.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
-        release_notes: release.get("body").and_then(|b| b.as_str()).unwrap_or("").to_string(),
-        release_url: release.get("html_url").and_then(|u| u.as_str()).unwrap_or("").to_string(),
-        published_at: release.get("published_at").and_then(|p| p.as_str()).unwrap_or("").to_string(),
-        asset_name: asset.name,
-        asset_url: asset.url,
-        asset_size: asset.size,
-        update_available,
-    }
+pub async fn app_update_check() -> AppUpdateStatus {
+    // 网络检查可能阻塞到连接超时；放在阻塞线程，避免非异步命令冻结主线程。
+    tauri::async_runtime::spawn_blocking(|| {
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        let Some((release, assets)) = fetch_latest_release() else {
+            return empty_status(&current_version);
+        };
+        let latest_version = release.get("tag_name").and_then(|t| t.as_str()).unwrap_or("").trim().to_string();
+        let update_available = compare_versions(&current_version, &latest_version).unwrap_or(false);
+        let base = AppUpdateStatus {
+            current_version: current_version.clone(),
+            latest_version,
+            release_name: release.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+            release_notes: release.get("body").and_then(|b| b.as_str()).unwrap_or("").to_string(),
+            release_url: release.get("html_url").and_then(|u| u.as_str()).unwrap_or("").to_string(),
+            published_at: release.get("published_at").and_then(|p| p.as_str()).unwrap_or("").to_string(),
+            asset_name: String::new(),
+            asset_url: String::new(),
+            asset_size: 0,
+            update_available,
+            has_release: true,
+            installable: cfg!(windows),
+        };
+        match pick_asset(&assets) {
+            Some(asset) => AppUpdateStatus {
+                asset_name: asset.name,
+                asset_url: asset.url,
+                asset_size: asset.size,
+                ..base
+            },
+            // release 存在但没有本平台安装包：保留 release_url 供「前往发布页」回退。
+            None => AppUpdateStatus { update_available: false, ..base },
+        }
+    })
+    .await
+    .unwrap_or_else(|_| empty_status(env!("CARGO_PKG_VERSION")))
 }
 
 fn updates_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -244,7 +264,7 @@ static RUNNING_DOWNLOAD: Mutex<()> = Mutex::new(());
 #[tauri::command]
 pub async fn app_update_download(app: AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let _guard = RUNNING_DOWNLOAD.lock().map_err(|_| "已有下载在进行".to_string())?;
+        let _guard = RUNNING_DOWNLOAD.try_lock().map_err(|_| "已有下载正在进行".to_string())?;
         let Some((_, assets)) = fetch_latest_release() else {
             return Err("未获取到可用发布版本，无法下载".into());
         };
@@ -318,9 +338,4 @@ mod tests {
         assert!(pick_asset(&[]).is_none());
     }
 
-    #[test]
-    fn stream_rejects_oversized_payload() {
-        // stream_to_file 的超额保护由下载流程覆盖；这里只锁住比较与资产选择。
-        assert!(compare_versions("0.2.0", "0.1.9").is_some());
-    }
 }

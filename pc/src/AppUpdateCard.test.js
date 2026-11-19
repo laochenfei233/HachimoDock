@@ -9,6 +9,7 @@ test("AppUpdateCard auto-checks on mount and renders the check/download/install 
   assert.match(card, /invoke\("app_update_check"\)/);
   assert.match(card, /invoke\("app_update_download"\)/);
   assert.match(card, /invoke\("app_update_install", \{ path: downloadedPath \}\)/);
+  assert.match(card, /invoke\("open_external_url", \{ url: status\.release_url \}\)/);
   assert.match(card, /listen\("app-update-download-progress"/);
   // Web preview (no Tauri) keeps the placeholder copy instead of failing.
   assert.match(card, /window\.__TAURI_INTERNALS__/);
@@ -16,6 +17,9 @@ test("AppUpdateCard auto-checks on mount and renders the check/download/install 
   // Download owns exit protection and clamps progress to 0..100.
   assert.match(card, /useExitProtection\(downloading/);
   assert.match(card, /Math\.min\(100, Number\(event\?\.payload\?\.percent\)/);
+  // Asset fallback (no matching asset / macOS) degrades to the release page.
+  assert.match(card, /downloadInApp = updateAvailable && installable/);
+  assert.match(card, /发布于 \$\{status\.published_at\.slice\(0, 10\)\}/);
 });
 
 test("ApiSettings renders the update card below the appearance group", () => {
