@@ -3119,7 +3119,7 @@ mod tests {
                 capture_armed:AtomicBool::new(false), capture_ready:AtomicBool::new(false),
                 stop_notify:tokio::sync::Notify::new(), input:tx,
                 status:Mutex::new(RealtimeChatStatus { active:true, appearance_id:"pet-a".into(), ..Default::default() }),
-                completed_playback:Mutex::new(String::new()), pending_persona:Mutex::new(None), playback_volume:AtomicU32::new(1.0f32.to_bits()) };
+                completed_playback:Mutex::new(String::new()), pending_persona:Mutex::new(None), playback_volume:AtomicU32::new(1.0f32.to_bits()), wifi:None, corrupt_capture_streak:AtomicU32::new(0) };
             let mut current = RealtimeChatStartInput { board_device_id:"board".into(), appearance_id:"pet-a".into(),
                 display_name:"n".into(), system_prompt:"p".into(), greeting:"".into(), voice:VoiceSpec::default() };
             let mut next = current.clone(); next.voice.provider = "dashscope_tts".into();

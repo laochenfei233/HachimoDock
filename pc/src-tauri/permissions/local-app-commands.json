@@ -187,7 +187,10 @@
           "prism_activate_session",
           "weather_key_status",
           "save_weather_key",
-          "clear_weather_key"
+          "clear_weather_key",
+          "app_update_check",
+          "app_update_download",
+          "app_update_install"
         ]
       }
     }

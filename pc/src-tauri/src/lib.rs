@@ -88,6 +88,7 @@ mod component_news;
 mod knowledge_narration;
 mod app_weather;
 mod weather_keys;
+mod app_update;
 mod wasm_uv;
 mod petui_authoring;
 mod wasm_preview_session;
@@ -12815,6 +12816,9 @@ pub fn run() {
             weather_keys::weather_key_status,
             weather_keys::save_weather_key,
             weather_keys::clear_weather_key,
+            app_update::app_update_check,
+            app_update::app_update_download,
+            app_update::app_update_install,
             auth_provider::auth_provider_configure,
             auth_provider::auth_provider_begin,
             auth_provider::auth_provider_poll,
