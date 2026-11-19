@@ -5525,7 +5525,7 @@ mod tests {
             .unwrap();
         // Current-visible target discovery maps zcode to its ZCode process name.
         assert!(script.contains("elseif ($agent -eq 'zcode') { 'ZCode' }"));
-        assert!(script.contains("@('workbuddy','deepseek-harness','prism-agent','zcode') -contains $agent"));
+        assert!(script.contains("@('workbuddy','devin','deepseek-harness','prism-agent','zcode') -contains $agent"));
         let snapshot = script
             .split("function Get-TaskDraftSnapshot")
             .nth(1)
@@ -5534,7 +5534,7 @@ mod tests {
             .next()
             .unwrap();
         assert!(snapshot.contains(
-            "@('codex','workbuddy','deepseek-harness','prism-agent','zcode') -notcontains $state.Agent"
+            "@('codex','workbuddy','devin','deepseek-harness','prism-agent','zcode') -notcontains $state.Agent"
         ));
         let dispatch = script
             .split("'dispatch' {")
@@ -5544,7 +5544,7 @@ mod tests {
             .next()
             .unwrap();
         assert!(dispatch.contains(
-            "@('codex','workbuddy','deepseek-harness','prism-agent','zcode') -notcontains $state.Agent"
+            "@('codex','workbuddy','devin','deepseek-harness','prism-agent','zcode') -notcontains $state.Agent"
         ));
         // Product-name exclusions never treat the app title as conversation identity.
         assert_eq!(

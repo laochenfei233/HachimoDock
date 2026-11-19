@@ -17,7 +17,7 @@ test("DeepSeek SW1 submits an existing foreground draft without a recording or r
   assert.doesNotMatch(entry, /\.update\(|dispatch_task|\/voice\/submit/);
 
   const mac = rust("codex_composer_macos.rs").split("fn confirm_voice_inner(")[1];
-  const once = mac.split("if state.agent == MacosAgent::DeepSeekHarness && expected.is_some()")[0];
+  const once = mac.split("if matches!(state.agent, MacosAgent::DeepSeekHarness | MacosAgent::PrismAgent)")[0];
   assert.match(once, /DeepSeekHarness\) && expected.is_none\(\)[\s\S]*submit_once\(/);
   assert.doesNotMatch(once, /wait_for_submit_readback/);
 });

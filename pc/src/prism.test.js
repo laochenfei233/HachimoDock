@@ -16,7 +16,7 @@ test("Rust registers prism-agent as a first-class bus, registry and composer cha
   const rust = read("../src-tauri/src/lib.rs");
 
   assert.match(rust, /detect_prism\(\),/);
-  assert.match(rust, /KNOWN_USB_STATE_SOURCES: \[&str; 8\]/);
+  assert.match(rust, /KNOWN_USB_STATE_SOURCES: \[&str; 10\]/);
   assert.match(rust, /"prism-agent" \| "prism" => Some\("prism-agent"\.to_string\(\)\)/);
   assert.match(rust, /"prism-agent" => "prism-agent"\.to_string\(\)/);
   assert.match(rust, /"prism-agent" \| "prism" => "Prism"\.to_string\(\)/);
@@ -53,7 +53,7 @@ test("prism voice rejects bound history and rides the composer identity maps", (
   const macos = read("../src-tauri/src/codex_composer_macos.rs");
 
   // Voice draft startup refuses bound sessions for prism like DSH/WorkBuddy.
-  assert.match(rust, /"workbuddy" \| "deepseek-harness" \| "prism-agent" \| "zcode"\) \{\s*Err\(/);
+  assert.match(rust, /"workbuddy" \| "devin" \| "deepseek-harness" \| "prism-agent" \| "zcode"\) \{\s*Err\(/);
   // Windows identity: real Tauri binary name, verified against the NSIS layout.
   assert.match(composer, /"prism-agent" => macos::MacosAgent::PrismAgent/);
   assert.match(composer, /"prism-agent" => &\["prism-agent\.exe"\]/);

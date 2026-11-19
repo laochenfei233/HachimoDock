@@ -28,6 +28,11 @@ export const FIXED_AGENT_OPTIONS = [
     detail: "DeepSeek Harness 桌面对话与本地桥接渠道",
   },
   {
+    id: "prism-agent",
+    label: "Prism",
+    detail: "Prism（DeepSeek Harness 分支）桌面对话、本地桥接与会话切换渠道",
+  },
+  {
     id: "mimocode",
     label: "MiMo Desktop / MiMoCode",
     detail: "跟随小米 MiMo 桌面应用和 MiMoCode 的会话状态",
@@ -46,11 +51,6 @@ export const FIXED_AGENT_OPTIONS = [
     id: "hermes",
     label: "Hermes Agent",
     detail: "跟随 Hermes 本地会话状态",
-  },
-  {
-    id: "prism-agent",
-    label: "Prism",
-    detail: "Prism（DeepSeek Harness 分支）桌面对话、本地桥接与会话切换渠道",
   },
   {
     id: "devin",

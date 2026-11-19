@@ -851,7 +851,7 @@ fn public_status_full(
     DeviceAsrSettingsStatus {
         configured,
         deferred: false,
-        provider: global_provider_label(),
+        provider: global_provider_label().to_string(),
         mode: "bigmodel-async-device-pcm",
         endpoint: if provider == "volcengine" { DEFAULT_ENDPOINT.to_string() } else { base_url.clone() },
         resource_id,

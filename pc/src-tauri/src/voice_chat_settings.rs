@@ -178,25 +178,21 @@ pub struct VoiceChatSettings {
     pub asr_model: String,
     /// 仅 custom 服务商使用；预设服务商始终用官方端点。
     pub asr_base_url: String,
-    /// 语音合成服务商（可与 ASR 不同，实现跨商组合）。
-    pub tts_provider: String,
-    pub tts_model: String,
-    pub tts_base_url: String,
-    /// 非豆包服务商的默认合成音色（豆包音色跟随形象配置）。
-    pub tts_voice: String,
     /// ASR/TTS 共用的按服务商凭据；volcengine 例外——其 Key 继续存于 volcengine_asr 凭据库。
     pub speech_api_keys: BTreeMap<String, String>,
     pub llm_search_mode: crate::web_search::Mode,
     pub llm_search_api_key: String,
     pub tts_api_key: String,
     pub tts_resource_id: String,
-    /// "volcengine" (built-in) or "openai" (custom OpenAI-compatible endpoint).
+    /// 语音合成服务商（可与 ASR 不同，实现跨商组合）：
+    /// "volcengine"（豆包内置）| "dashscope" | "mimo" | "custom"（OpenAI 兼容端点）| "openai"。
     #[serde(default = "default_tts_provider")]
     pub tts_provider: String,
     #[serde(default)]
     pub tts_base_url: String,
     #[serde(default)]
     pub tts_model: String,
+    /// 非豆包服务商的默认合成音色（豆包音色跟随形象配置）。
     #[serde(default)]
     pub tts_voice: String,
 }
@@ -216,10 +212,6 @@ pub struct VoiceChatSettingsInput {
     pub asr_base_url: Option<String>,
     /// 新写入的语音识别 Key；按 asr_provider 的 scope 入库（volcengine 会被忽略，走凭据库）。
     pub asr_api_key: Option<String>,
-    pub tts_provider: Option<String>,
-    pub tts_model: Option<String>,
-    pub tts_base_url: Option<String>,
-    pub tts_voice: Option<String>,
     /// 新写入的语音合成 Key；按 tts_provider 的 scope 入库。
     pub tts_speech_key: Option<String>,
     pub llm_search_mode: Option<crate::web_search::Mode>,
@@ -259,10 +251,6 @@ pub struct VoiceChatSettingsStatus {
     pub tts_voice: String,
     pub tts_api_key_masked: String,
     pub tts_resource_id: String,
-    pub tts_provider: String,
-    pub tts_base_url: String,
-    pub tts_model: String,
-    pub tts_voice: String,
     pub credential_source: &'static str,
 }
 
@@ -536,10 +524,6 @@ pub fn status() -> Result<VoiceChatSettingsStatus, String> {
         tts_voice: settings.tts_voice.clone(),
         tts_api_key_masked: if tts_uses_asr_key { mask_secret(&tts_key) } else { tts_masked },
         tts_resource_id: settings.tts_resource_id.clone(),
-        tts_provider: settings.tts_provider.clone(),
-        tts_base_url: settings.tts_base_url.clone(),
-        tts_model: settings.tts_model.clone(),
-        tts_voice: settings.tts_voice.clone(),
         credential_source: source,
     })
 }
