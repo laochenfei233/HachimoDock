@@ -1,0 +1,277 @@
+name: Build installers (experiment)
+
+# 实验性安装包构建：源码来自本仓库 ci-src release 的源码包（本地 main 的 git archive）。
+# 审计版 FFmpeg/Node 运行时从官方 ai-maker-lab v0.1.245 安装包内抽取，并按
+# prepare-desktop-resources.mjs 的审计哈希逐个校验（校验失败直接终止，不产包）。
+# macos-x64 与 windows-aarch64 在审计表中没有条目（不存在 8.1.3 的审计二进制）：
+# 对应 job 用官方 arm64/x64 产物走真实流水线，在审计门禁处失败——失败日志即实证。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_SETUP_URL: https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.245/HachimiDock_0.1.245_Windows-x64-setup.exe
+  UPSTREAM_DMG_URL: https://github.com/ai-maker-lab/HachimoDock/releases/download/v0.1.245/HachimiDock_0.1.245_macOS-arm64.dmg
+  AUDIT_FFMPEG_WIN_X64: 18ac8e4c695148f3e2e20b6a24b3974a7b350b3a6dee1c8a018db5c2d1b3fc4f
+  AUDIT_FFMPEG_MAC_ARM64: ec8356f02a301258f9c4737ef3ab034259f4ff9031c905271e07892fa8bdf7c5
+  AUDIT_FFMPEG_SOURCE: 99b393871f64a2d860587bcf0f9bdbf68b28693100b51c9dfdf3f37b604896a9
+
+jobs:
+  win-x64:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Download and unpack source bundle
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ci-src --repo ${{ github.repository }} --pattern "hachimodock-src-*.tar.gz" --output src.tar.gz
+          New-Item -ItemType Directory -Force -Path src | Out-Null
+          tar -xzf src.tar.gz -C src
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Stage firmware OTA inputs
+        working-directory: src
+        run: python pc/scripts/stage-release-firmware.py
+
+      - name: Extract audited runtime from the official setup (silent install)
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri $env:UPSTREAM_SETUP_URL -OutFile setup.exe -MaximumRedirection 5
+          Start-Process -Wait -FilePath .\setup.exe -ArgumentList '/S', '/D=C:\stage\app'
+          $expect = @{
+            'C:\stage\app\tools\ffmpeg.exe' = $env:AUDIT_FFMPEG_WIN_X64
+            'C:\stage\app\tools\source\ffmpeg-8.1.3.tar.xz' = $env:AUDIT_FFMPEG_SOURCE
+          }
+          foreach ($path in $expect.Keys) {
+            if (-not (Test-Path $path)) { throw "official installer did not contain $path" }
+            $hash = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLower()
+            if ($hash -ne $expect[$path]) { throw "audit hash mismatch for $path`: $hash" }
+          }
+          foreach ($name in 'tools\ffmpeg.LICENSE', 'tools\ffmpeg.README', 'tools\ffmpeg.SOURCE.txt', 'tools\zlib.LICENSE', 'bridge\runtime\node.exe') {
+            if (-not (Test-Path "C:\stage\app\$name")) { throw "official installer did not contain $name" }
+          }
+          "PET_MANAGER_FFMPEG_BIN=C:\stage\app\tools\ffmpeg.exe" >> $env:GITHUB_ENV
+          "PET_MANAGER_FFMPEG_README=C:\stage\app\tools\ffmpeg.README" >> $env:GITHUB_ENV
+          "PET_MANAGER_FFMPEG_LICENSE=C:\stage\app\tools\ffmpeg.LICENSE" >> $env:GITHUB_ENV
+          "PET_MANAGER_FFMPEG_SOURCE_ARCHIVE=C:\stage\app\tools\source\ffmpeg-8.1.3.tar.xz" >> $env:GITHUB_ENV
+          "PET_MANAGER_ZLIB_LICENSE=C:\stage\app\tools\zlib.LICENSE" >> $env:GITHUB_ENV
+          "PET_MANAGER_NODE_BIN=C:\stage\app\bridge\runtime\node.exe" >> $env:GITHUB_ENV
+          "PET_MANAGER_TARGET_ARCH=x64" >> $env:GITHUB_ENV
+
+      - name: npm ci
+        working-directory: src/pc
+        run: npm ci
+
+      - name: Build (prepare:desktop + tauri build nsis,msi)
+        working-directory: src/pc
+        run: npm run build:win
+
+      - name: Collect installers
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item src\pc\src-tauri\target\release\bundle\nsis\*.exe dist\
+          Copy-Item src\pc\src-tauri\target\release\bundle\msi\*.msi dist\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-installers
+          path: dist/
+
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Download and unpack source bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ci-src --repo "${{ github.repository }}" --pattern "hachimodock-src-*.tar.gz" --output src.tar.gz
+          mkdir src
+          tar -xzf src.tar.gz -C src
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Stage firmware OTA inputs
+        working-directory: src
+        run: python pc/scripts/stage-release-firmware.py
+
+      - name: Mount the official dmg and export the audited runtime
+        run: |
+          set -euo pipefail
+          curl -L -o official.dmg "$UPSTREAM_DMG_URL"
+          hdiutil attach -nobrowse -readonly -mountpoint /Volumes/official official.dmg
+          APP="$(find /Volumes/official -maxdepth 2 -name '*.app' | head -1)"
+          RES="$APP/Contents/Resources"
+          test -f "$RES/tools/ffmpeg" || { echo "official dmg did not contain tools/ffmpeg"; exit 1; }
+          ffmpeg_hash="$(shasum -a 256 "$RES/tools/ffmpeg" | cut -d' ' -f1)"
+          source_hash="$(shasum -a 256 "$RES/tools/source/ffmpeg-8.1.3.tar.xz" | cut -d' ' -f1)"
+          test "$ffmpeg_hash" = "$AUDIT_FFMPEG_MAC_ARM64" || { echo "audit hash mismatch: $ffmpeg_hash"; exit 1; }
+          test "$source_hash" = "$AUDIT_FFMPEG_SOURCE" || { echo "audit hash mismatch: $source_hash"; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/audited"
+          cp "$RES/tools/ffmpeg" "$RES/tools/ffmpeg.LICENSE" "$RES/tools/ffmpeg.README" \
+             "$RES/tools/source/ffmpeg-8.1.3.tar.xz" "$RES/bridge/runtime/node" "$GITHUB_WORKSPACE/audited/"
+          hdiutil detach /Volumes/official
+          {
+            echo "PET_MANAGER_FFMPEG_BIN=$GITHUB_WORKSPACE/audited/ffmpeg"
+            echo "PET_MANAGER_FFMPEG_README=$GITHUB_WORKSPACE/audited/ffmpeg.README"
+            echo "PET_MANAGER_FFMPEG_LICENSE=$GITHUB_WORKSPACE/audited/ffmpeg.LICENSE"
+            echo "PET_MANAGER_FFMPEG_SOURCE_ARCHIVE=$GITHUB_WORKSPACE/audited/ffmpeg-8.1.3.tar.xz"
+            echo "PET_MANAGER_NODE_BIN=$GITHUB_WORKSPACE/audited/node"
+            echo "PET_MANAGER_TARGET_ARCH=arm64"
+          } >> "$GITHUB_ENV"
+
+      - name: npm ci
+        working-directory: src/pc
+        run: npm ci
+
+      - name: Build (prepare:desktop + tauri build app,dmg, ad-hoc signed)
+        working-directory: src/pc
+        run: npm run build:mac
+
+      - name: Collect installers
+        run: |
+          mkdir -p dist
+          cp src/pc/src-tauri/target/release/bundle/dmg/*.dmg dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-installer
+          path: dist/
+
+  macos-x64:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Download and unpack source bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ci-src --repo "${{ github.repository }}" --pattern "hachimodock-src-*.tar.gz" --output src.tar.gz
+          mkdir src
+          tar -xzf src.tar.gz -C src
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Stage firmware OTA inputs
+        working-directory: src
+        run: python pc/scripts/stage-release-firmware.py
+
+      - name: Extract the official arm64 runtime as the audit-gate input
+        run: |
+          set -euo pipefail
+          curl -L -o official.dmg "$UPSTREAM_DMG_URL"
+          hdiutil attach -nobrowse -readonly -mountpoint /Volumes/official official.dmg
+          APP="$(find /Volumes/official -maxdepth 2 -name '*.app' | head -1)"
+          RES="$APP/Contents/Resources"
+          mkdir -p audited
+          cp "$RES/tools/ffmpeg" "$RES/tools/ffmpeg.LICENSE" "$RES/tools/ffmpeg.README" \
+             "$RES/tools/source/ffmpeg-8.1.3.tar.xz" "$RES/bridge/runtime/node" audited/
+          hdiutil detach /Volumes/official
+
+      # 无 macos-x64 审计条目：官方 arm64 产物作为输入走真实流水线，
+      # 在「没有 macos-x64 的已审计 FFmpeg 二进制哈希」处失败——日志即实证。
+      - name: Attempt x64 build (expected to fail at the FFmpeg audit gate)
+        working-directory: src/pc
+        env:
+          PET_MANAGER_TARGET_ARCH: x64
+          CARGO_BUILD_TARGET: x86_64-apple-darwin
+          PET_MANAGER_FFMPEG_BIN: /Users/runner/work/HachimoDock/HachimoDock/audited/ffmpeg
+          PET_MANAGER_FFMPEG_README: /Users/runner/work/HachimoDock/HachimoDock/audited/ffmpeg.README
+          PET_MANAGER_FFMPEG_LICENSE: /Users/runner/work/HachimoDock/HachimoDock/audited/ffmpeg.LICENSE
+          PET_MANAGER_FFMPEG_SOURCE_ARCHIVE: /Users/runner/work/HachimoDock/HachimoDock/audited/ffmpeg-8.1.3.tar.xz
+          PET_MANAGER_NODE_BIN: /Users/runner/work/HachimoDock/HachimoDock/audited/node
+        run: |
+          set +e
+          npm run build:mac 2>&1 | tee ../macos-x64-attempt.log
+          code=${PIPESTATUS[0]}
+          echo "prepare/build exit=$code (expected nonzero at the audit gate)"
+          grep -m1 "已审计 FFmpeg 二进制哈希" ../macos-x64-attempt.log || true
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-attempt-log
+          path: macos-x64-attempt.log
+
+  win-arm64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download and unpack source bundle
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ci-src --repo ${{ github.repository }} --pattern "hachimodock-src-*.tar.gz" --output src.tar.gz
+          New-Item -ItemType Directory -Force -Path src | Out-Null
+          tar -xzf src.tar.gz -C src
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Stage firmware OTA inputs
+        working-directory: src
+        run: python pc/scripts/stage-release-firmware.py
+
+      - name: Extract the official x64 runtime as the audit-gate input
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri $env:UPSTREAM_SETUP_URL -OutFile setup.exe -MaximumRedirection 5
+          Start-Process -Wait -FilePath .\setup.exe -ArgumentList '/S', '/D=C:\stage\app'
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\audited" | Out-Null
+          Copy-Item C:\stage\app\tools\ffmpeg.exe "$env:GITHUB_WORKSPACE\audited\"
+          Copy-Item C:\stage\app\tools\ffmpeg.LICENSE, C:\stage\app\tools\ffmpeg.README "$env:GITHUB_WORKSPACE\audited\"
+          Copy-Item C:\stage\app\tools\source\ffmpeg-8.1.3.tar.xz, C:\stage\app\tools\zlib.LICENSE "$env:GITHUB_WORKSPACE\audited\"
+          Copy-Item C:\stage\app\bridge\runtime\node.exe "$env:GITHUB_WORKSPACE\audited\"
+
+      # 无 windows-aarch64 审计条目：官方 x64 产物作为输入走真实流水线，
+      # 在「没有 windows-aarch64 的已审计 FFmpeg 二进制哈希」处失败——日志即实证。
+      - name: Attempt arm64 build (expected to fail at the FFmpeg audit gate)
+        shell: pwsh
+        working-directory: src/pc
+        env:
+          PET_MANAGER_TARGET_ARCH: arm64
+          CARGO_BUILD_TARGET: aarch64-pc-windows-msvc
+          PET_MANAGER_FFMPEG_BIN: ${{ github.workspace }}\audited\ffmpeg.exe
+          PET_MANAGER_FFMPEG_README: ${{ github.workspace }}\audited\ffmpeg.README
+          PET_MANAGER_FFMPEG_LICENSE: ${{ github.workspace }}\audited\ffmpeg.LICENSE
+          PET_MANAGER_FFMPEG_SOURCE_ARCHIVE: ${{ github.workspace }}\audited\ffmpeg-8.1.3.tar.xz
+          PET_MANAGER_ZLIB_LICENSE: ${{ github.workspace }}\audited\zlib.LICENSE
+          PET_MANAGER_NODE_BIN: ${{ github.workspace }}\audited\node.exe
+        run: |
+          npm run build:win 2>&1 | Tee-Object -FilePath ..\win-arm64-attempt.log
+          Write-Host "expected nonzero exit at the audit gate; exit=$LASTEXITCODE"
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-arm64-attempt-log
+          path: win-arm64-attempt.log
