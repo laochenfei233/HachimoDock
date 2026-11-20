@@ -9,6 +9,22 @@ set(WAMR_ROOT_DIR "$ENV{WAMR_ROOT}")
 if(NOT EXISTS "${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake")
   message(FATAL_ERROR "Set WAMR_ROOT to the WAMR source used for the device firmware")
 endif()
+
+# Runner MSVC 在 WASM_ENABLE_MODULE_INST_CONTEXT 与 WASM_CONFIGURABLE_BOUNDS_CHECKS
+# 都为 0 时把 WASMModuleInstanceExtraCommon 编译成空结构体（C2016，/std:c20 也无效）。
+# C2x 允许空结构体，但 runner 的 cl 不认识任何 /std 选项；在 configure 期补一个成员。
+if(MSVC)
+  file(READ "${WAMR_ROOT_DIR}/core/iwasm/interpreter/wasm_runtime.h" _wamr_header)
+  string(FIND "${_wamr_header}" "typedef struct WASMModuleInstanceExtraCommon {" _has_struct)
+  if(_has_struct GREATER_EQUAL 0)
+    string(REPLACE
+      "typedef struct WASMModuleInstanceExtraCommon {"
+      "typedef struct WASMModuleInstanceExtraCommon {
+    char _msvc_empty_struct_pad;"
+      _wamr_header_patched "${_wamr_header}")
+    file(WRITE "${WAMR_ROOT_DIR}/core/iwasm/interpreter/wasm_runtime.h" "${_wamr_header_patched}")
+  endif()
+endif()
 if(APPLE)
   set(WAMR_BUILD_PLATFORM darwin)
 elseif(WIN32)
