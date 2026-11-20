@@ -164,8 +164,9 @@ pub async fn app_update_check() -> AppUpdateStatus {
                 asset_size: asset.size,
                 ..base
             },
-            // release 存在但没有本平台安装包：保留 release_url 供「前往发布页」回退。
-            None => AppUpdateStatus { update_available: false, ..base },
+            // release 存在但没有本平台安装包：保留比较结果与 release_url，
+            // 前端 downloadInApp 因 asset_url 为空而不渲染下载按钮，走「前往发布页」回退。
+            None => base,
         }
     })
     .await
