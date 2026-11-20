@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import AppUpdateCard from "./AppUpdateCard.jsx";
 import PageShell from "./shell/PageShell.jsx";
 import Card from "./shell/Card.jsx";
 
@@ -1235,6 +1236,7 @@ export default function ApiSettings({ onBack, configReadError = "", active = tru
       </Card>
 
       <AppearanceCard />
+      <AppUpdateCard active={active} />
     </PageShell>
     </div>
   );
