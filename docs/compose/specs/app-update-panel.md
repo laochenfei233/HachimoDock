@@ -3,7 +3,7 @@ feature: app-update-panel
 status: delivered
 updated: 2026-11-20
 branch: feat/app-update-panel
-commits: f7dc9d9..b4baf19
+commits: f7dc9d9..fe97ff2
 ---
 
 # 应用更新板块（App Update Panel）
