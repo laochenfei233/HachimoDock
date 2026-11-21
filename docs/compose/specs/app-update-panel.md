@@ -10,7 +10,7 @@ commits: f7dc9d9..fe97ff2
 
 ## Report
 
-**What was built** — 设置 tab 底部新增「应用更新」卡片（`pc/src/AppUpdateCard.jsx`）。打开设置页自动查询一次 `api.github.com/repos/laochenfei233/HachimoDock/releases/latest`，与 `CARGO_PKG_VERSION` 比较：仓库尚不存在（404）或网络失败时显示「暂无发布版本」空态而非错误；发现新版本时显示版本号、发布日期与发布说明，提供应用内下载（`.part` 临时文件 + 原子改名 + `app-update-download-progress` 进度事件 + 直连失败后一次 `gh-proxy.com` 镜像回退 + 大小护栏）与「立即安装」（仅启动 updates 目录内的 `*.exe`，macOS 引导到发布页）。release 存在但没有本平台安装包时退化为「前往发布页」（经 `open_external_url` 打开）。
+**What was built** — 设置 tab 底部新增「应用更新」卡片（`pc/src/AppUpdateCard.jsx`）。打开设置页自动查询一次 `api.github.com/repos/laochenfei233/HachimoDock-beautiful/releases/latest`，与 `CARGO_PKG_VERSION` 比较：仓库尚不存在（404）或网络失败时显示「暂无发布版本」空态而非错误；发现新版本时显示版本号、发布日期与发布说明，提供应用内下载（`.part` 临时文件 + 原子改名 + `app-update-download-progress` 进度事件 + 直连失败后一次 `gh-proxy.com` 镜像回退 + 大小护栏）与「立即安装」（仅启动 updates 目录内的 `*.exe`，macOS 引导到发布页）。release 存在但没有本平台安装包时退化为「前往发布页」（经 `open_external_url` 打开）。
 
 原生命令 `app_update_check / app_update_download / app_update_install` 位于 `pc/src-tauri/src/app_update.rs`，全部注册进 `generate_handler!` 与 `local-app-commands.json`（community-bridge 一致性测试强制对齐）。check 为 async + `spawn_blocking`（避免非异步命令阻塞主线程）；download 用 `try_lock` 拒绝并发下载。
 
@@ -32,13 +32,13 @@ commits: f7dc9d9..fe97ff2
 
 ## [S1] Problem
 
-客户端从上游同步到 0.1.245 后，用户没有应用内的方式知道 `laochenfei233/HachimoDock` 仓库发布了新版本，更不能在应用内下载和安装。当前只能手动去 GitHub Release 页面对照版本号。
+客户端从上游同步到 0.1.245 后，用户没有应用内的方式知道 `laochenfei233/HachimoDock-beautiful` 仓库发布了新版本，更不能在应用内下载和安装。当前只能手动去 GitHub Release 页面对照版本号。
 
 ## [S2] Design
 
 ### S2.1 更新源与数据流
 
-- 唯一数据源：`GET https://api.github.com/repos/laochenfei233/HachimoDock/releases/latest`（GitHub REST v3，无需鉴权）。
+- 唯一数据源：`GET https://api.github.com/repos/laochenfei233/HachimoDock-beautiful/releases/latest`（GitHub REST v3，无需鉴权）。
 - 该仓库当前在 GitHub 上尚不存在（404）。API 404/网络失败时面板显示「暂无发布版本」，**不视为错误**；用户建仓发版后面板自动工作。
 - 响应解析字段：`tag_name`、`name`、`published_at`、`body`（发布说明，纯文本展示）、`assets[]`（`name`/`browser_download_url`/`size`）。
 - 资产选择：Windows 优先匹配名称含 `Windows` 且以 `.exe` 结尾的安装包（`*_Windows-x64-setup.exe`，对应 `npm run build:win` + `bundle:win:collect` 产物命名）；macOS 匹配 `.dmg`。无匹配资产时保留 release 元数据并以「前往发布页」回退（实现以 `has_release`/`installable` 字段区分「无 release」与「release 无本平台资产」两种态）。
@@ -74,7 +74,7 @@ commits: f7dc9d9..fe97ff2
   - 自动定时检查/启动时强制检查（仅打开设置页检查一次 + 手动按钮）。
   - Tauri 官方 updater 插件、签名校验、静默升级、断点续传、差分更新。
   - macOS 应用内安装（dmg 只引导到发布页；`installable` 字段门控）。
-  - 发布自动化：`laochenfei233/HachimoDock` 仓库本身需要用户在 GitHub 建仓并上传 release 资产，本特性只消费它。
+  - 发布自动化：`laochenfei233/HachimoDock-beautiful` 仓库本身需要用户在 GitHub 建仓并上传 release 资产，本特性只消费它。
   - 仓库没有 `pc/src-tauri/.folder.md`（实现时确认），目录文档落在既有两份 .folder.md 中。
 
 ## Tasks

@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-const RELEASE_API: &str = "https://api.github.com/repos/laochenfei233/HachimoDock/releases/latest";
+const RELEASE_API: &str = "https://api.github.com/repos/laochenfei233/HachimoDock-beautiful/releases/latest";
 const MIRROR_PREFIX: &str = "https://gh-proxy.com/";
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 
