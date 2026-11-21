@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(petui_wasm_check C ASM)
 
+# runner 的 cl 默认老 C 模式：不认 _Static_assert 关键字（LNK2019）。显式 C17。
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
 set(host "${CMAKE_CURRENT_LIST_DIR}/../../components/hachi_wamr")
 include("${host}/wamr-options.cmake")
 # Use the same software bounds checks as the embedded interpreter.
